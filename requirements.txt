@@ -1,0 +1,7 @@
+pyTelegramBotAPI
+pymongo
+dnspython
+requests
+pyrogram
+tgcrypto
+bson
