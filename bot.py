@@ -92,6 +92,11 @@ except ImportError as e:
     logger.error(f"❌ Failed to load account module: {e}")
     account_manager = None
 
+# Async manager for background tasks
+async_manager = None
+if account_manager:
+    async_manager = account_manager.async_manager
+
 # -----------------------
 # UTILITY FUNCTIONS
 # -----------------------
@@ -832,10 +837,9 @@ def handle_cancel_login(call):
         if "client" in state:
             try:
                 # Cleanup client
-                from account import PyrogramClientManager
-                manager = PyrogramClientManager(GLOBAL_API_ID, GLOBAL_API_HASH)
-                import asyncio
-                asyncio.run(manager.safe_disconnect(state["client"]))
+                if account_manager and account_manager.pyrogram_manager:
+                    import asyncio
+                    asyncio.run(account_manager.pyrogram_manager.safe_disconnect(state["client"]))
             except:
                 pass
     
@@ -2290,6 +2294,75 @@ def reject_recharge(recharge_id, admin_chat_id):
             bot.send_message(admin_chat_id, f"❌ Recharge {recharge_id} rejected")
     except Exception as e:
         logger.error(f"Reject recharge error: {e}")
+
+# -----------------------
+# ASYNC FUNCTIONS FOR OTP MONITORING
+# -----------------------
+async def continuous_otp_monitor(session_string, user_id, phone, session_id, max_wait_time=1800):
+    """Monitor for multiple OTPs for 30 minutes"""
+    from account import otp_searcher
+    
+    start_time = time.time()
+    all_otps_found = []
+    
+    while time.time() - start_time < max_wait_time:
+        try:
+            # Check if session is still active
+            session_data = otp_sessions_col.find_one({"session_id": session_id})
+            if not session_data or session_data.get("status") == "completed":
+                logger.info(f"OTP monitoring stopped for {phone} - session completed")
+                break
+            
+            otp_codes = await otp_searcher(session_string)
+            
+            # Send new OTPs to user
+            new_otps = [otp for otp in otp_codes if otp not in all_otps_found]
+            
+            for otp_code in new_otps:
+                all_otps_found.append(otp_code)
+                logger.info(f"New OTP found for {phone}: {otp_code}")
+                
+                try:
+                    # Create inline keyboard
+                    markup = InlineKeyboardMarkup(row_width=2)
+                    markup.add(
+                        InlineKeyboardButton("✅ Complete Order", callback_data=f"complete_order_{session_id}"),
+                        InlineKeyboardButton("🚪 Logout", callback_data=f"logout_session_{session_id}")
+                    )
+                    
+                    bot.send_message(
+                        user_id,
+                        f"✅ **New OTP Received!**\n\n"
+                        f"📱 Phone: `{phone}`\n"
+                        f"🔢 OTP Code: `{otp_code}`\n\n"
+                        f"Enter this code in Telegram X app.\n"
+                        f"Click 'Complete Order' when done.",
+                        parse_mode="Markdown",
+                        reply_markup=markup
+                    )
+                    
+                    # Update session with latest OTP
+                    otp_sessions_col.update_one(
+                        {"session_id": session_id},
+                        {"$set": {
+                            "status": "otp_delivered", 
+                            "otp_code": otp_code,
+                            "latest_otp_at": datetime.utcnow(),
+                            "total_otps_received": len(all_otps_found)
+                        }}
+                    )
+                    
+                except Exception as e:
+                    logger.error(f"Failed to send OTP message: {e}")
+            
+            # Wait 8 seconds before checking again
+            await asyncio.sleep(8)
+            
+        except Exception as e:
+            logger.error(f"OTP monitor error: {e}")
+            await asyncio.sleep(8)
+    
+    return all_otps_found
 
 # -----------------------
 # RUN BOT
