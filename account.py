@@ -7,8 +7,8 @@ import logging
 import re
 import threading
 import time
-from datetime import datetime
 import asyncio
+from datetime import datetime
 from pyrogram import Client
 from pyrogram.errors import (
     PhoneNumberInvalid, PhoneCodeInvalid,
@@ -17,6 +17,20 @@ from pyrogram.errors import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Global event loop for async operations
+_global_event_loop = None
+
+def get_event_loop():
+    """Get or create a global event loop"""
+    global _global_event_loop
+    if _global_event_loop is None:
+        try:
+            _global_event_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            _global_event_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(_global_event_loop)
+    return _global_event_loop
 
 # -----------------------
 # ASYNC MANAGEMENT
@@ -29,18 +43,44 @@ class AsyncManager:
     def run_async(self, coro):
         """Run async coroutine from sync context"""
         try:
-            return asyncio.run(coro)
-        except RuntimeError:
-            # If there's already a running event loop
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
+            loop = get_event_loop()
+            
+            # Check if we're in the event loop thread
+            if loop.is_running():
+                # Run in a new thread with its own event loop
+                return self._run_in_thread(coro)
+            else:
+                # Run in current event loop
                 return loop.run_until_complete(coro)
-            finally:
-                loop.close()
+                
         except Exception as e:
             logger.error(f"Async operation failed: {e}")
             raise
+    
+    def _run_in_thread(self, coro):
+        """Run coroutine in a separate thread with its own event loop"""
+        result = None
+        exception = None
+        
+        def run():
+            nonlocal result, exception
+            try:
+                # Create new event loop for this thread
+                new_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(new_loop)
+                result = new_loop.run_until_complete(coro)
+                new_loop.close()
+            except Exception as e:
+                exception = e
+        
+        # Run in thread
+        thread = threading.Thread(target=run)
+        thread.start()
+        thread.join()
+        
+        if exception:
+            raise exception
+        return result
 
 # -----------------------
 # PYROGRAM CLIENT MANAGER (FIXED)
@@ -117,11 +157,11 @@ class PyrogramClientManager:
     async def safe_disconnect(self, client):
         """Safely disconnect client without ping errors"""
         try:
-            if hasattr(client, 'is_connected') and client.is_connected:
+            if client and hasattr(client, 'is_connected') and client.is_connected:
                 # Stop session first to prevent ping errors
                 if hasattr(client, 'session') and client.session:
                     try:
-                        client.session.stop()
+                        await client.session.stop()
                     except:
                         pass
                 await client.disconnect()
