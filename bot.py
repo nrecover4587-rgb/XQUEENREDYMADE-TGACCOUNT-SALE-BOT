@@ -1255,7 +1255,7 @@ def handle_logout_session(user_id, session_id, chat_id, callback_id):
 # -----------------------
 # MESSAGE HANDLER FOR LOGIN FLOW
 # -----------------------
-@bot.message_handler(func=lambda m: login_states.get(m.from_user.id, {}).get("step") in ["phone", "otp", "password"])
+@bot.message_handler(func=lambda m: login_states.get(m.from_user.id, {}).get("step") in ["phone", "waiting_otp", "waiting_password"])
 def handle_login_flow_messages(msg):
     user_id = msg.from_user.id
     
