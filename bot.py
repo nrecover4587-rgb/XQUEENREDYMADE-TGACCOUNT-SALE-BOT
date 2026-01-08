@@ -16,6 +16,7 @@ from pyrogram.errors import (
     PhoneCodeExpired, SessionPasswordNeeded, PasswordHashInvalid,
     FloodWait, PhoneCodeEmpty
 )
+import functools
 
 # -----------------------
 # CONFIG
@@ -82,10 +83,115 @@ referral_data = {}
 
 # Pyrogram login states
 login_states = {}  # Format: {user_id: {"step": "phone", "client": client_obj, ...}}
-login_clients = {}  # Store active Pyrogram clients
 
-# Payment checker flag to prevent duplicate threads
-payment_checker_started = False
+# -----------------------
+# ASYNC MANAGEMENT FIXES
+# -----------------------
+class AsyncManager:
+    """Manages async operations in sync context"""
+    def __init__(self):
+        self.loop = None
+        self.lock = threading.Lock()
+        
+    def run_async(self, coro):
+        """Run async coroutine from sync context"""
+        try:
+            # Try to get existing event loop
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            
+            # Run the coroutine
+            if loop.is_running():
+                # If loop is running, schedule the task
+                future = asyncio.run_coroutine_threadsafe(coro, loop)
+                return future.result(timeout=30)
+            else:
+                # Run in current loop
+                return loop.run_until_complete(coro)
+                
+        except Exception as e:
+            logger.error(f"Async operation failed: {e}")
+            raise
+
+async_manager = AsyncManager()
+
+# -----------------------
+# PYROGRAM CLIENT MANAGER (FIXED)
+# -----------------------
+class PyrogramClientManager:
+    """Thread-safe Pyrogram client management"""
+    def __init__(self):
+        self.clients = {}
+        self.lock = threading.Lock()
+        
+    async def create_client(self, session_string=None, name=None):
+        """Create a Pyrogram client"""
+        if name is None:
+            name = f"client_{int(time.time())}"
+            
+        client = Client(
+            name=name,
+            session_string=session_string,
+            api_id=GLOBAL_API_ID,
+            api_hash=GLOBAL_API_HASH,
+            in_memory=True
+        )
+        
+        await client.connect()
+        
+        with self.lock:
+            self.clients[name] = {
+                'client': client,
+                'created_at': datetime.utcnow()
+            }
+            
+        return client
+    
+    async def sign_in_with_otp(self, client, phone_number, phone_code_hash, otp_code):
+        """Sign in with OTP (handles 2FA)"""
+        try:
+            await client.sign_in(
+                phone_number=phone_number,
+                phone_code=otp_code,
+                phone_code_hash=phone_code_hash
+            )
+            return True, None, None
+        except SessionPasswordNeeded:
+            return False, "password_required", None
+        except Exception as e:
+            return False, "error", str(e)
+    
+    async def sign_in_with_password(self, client, password):
+        """Sign in with 2FA password"""
+        try:
+            await client.check_password(password)
+            return True, None
+        except Exception as e:
+            return False, str(e)
+    
+    async def get_session_string(self, client):
+        """Get session string from authorized client"""
+        if await client.is_user_authorized():
+            return await client.export_session_string()
+        return None
+    
+    async def cleanup_client(self, client_name):
+        """Cleanup client properly"""
+        with self.lock:
+            if client_name in self.clients:
+                client_data = self.clients.pop(client_name)
+                try:
+                    client = client_data['client']
+                    if client.is_connected:
+                        await client.disconnect()
+                    logger.info(f"Cleaned up client: {client_name}")
+                except Exception as e:
+                    logger.error(f"Error cleaning up client {client_name}: {e}")
+
+pyrogram_manager = PyrogramClientManager()
 
 # -----------------------
 # UTILITY FUNCTIONS
@@ -225,17 +331,17 @@ def add_referral_commission(referrer_id, recharge_amount, recharge_id):
         logger.error(f"Error adding referral commission: {e}")
 
 # -----------------------
-# IMB PAYMENT FUNCTIONS (From first code - recharge only)
+# IMB PAYMENT FUNCTIONS
 # -----------------------
 def create_imb_payment_order(user_id, amount):
     """
-    IMB Gateway se payment order create karta hai
+    Create payment order via IMB Gateway
     """
     try:
-        # Unique order ID generate karein
+        # Unique order ID
         order_id = f"BOT{user_id}{int(time.time())}"
         
-        # Default mobile number use karein (yeh IMB ko required hai)
+        # Default mobile number (required by IMB)
         customer_mobile = "9999999999"
         
         payload = {
@@ -275,7 +381,7 @@ def create_imb_payment_order(user_id, amount):
 
 def check_imb_payment_status(order_id):
     """
-    IMB Gateway se payment status check karta hai
+    Check payment status via IMB Gateway
     """
     try:
         payload = {
@@ -311,11 +417,11 @@ def check_imb_payment_status(order_id):
         return {"success": False, "error": f"Status check failed: {str(e)}"}
 
 # -----------------------
-# BACKGROUND PAYMENT CHECKER (From first code - recharge only)
+# BACKGROUND PAYMENT CHECKER
 # -----------------------
 def check_pending_payments():
     """
-    Background mein pending payments check karta hai
+    Background thread to check pending payments
     """
     while True:
         try:
@@ -374,32 +480,30 @@ def check_pending_payments():
                                 user_stage[user_id] = "done"
                                 pending_messages.pop(user_id, None)
             
-            time.sleep(30)  # 30 seconds mein check karein
+            time.sleep(30)  # Check every 30 seconds
             
         except Exception as e:
             logger.error(f"Payment checker error: {e}")
             time.sleep(60)
 
 # -----------------------
-# IMPROVED OTP SEARCHER FUNCTION - MULTIPLE OTP SUPPORT
+# FIXED OTP SEARCHER FUNCTION
 # -----------------------
-async def otp_searcher(session_string, last_checked_time=None):
+async def otp_searcher(session_string):
     """Search for OTP in Telegram messages - returns list of all OTPs found"""
     client = None
     try:
-        client = Client(
-            "otp_searcher", 
-            session_string=session_string, 
-            api_id=GLOBAL_API_ID, 
-            api_hash=GLOBAL_API_HASH, 
-            in_memory=True
+        # Create client with unique name
+        client_name = f"otp_searcher_{int(time.time())}"
+        client = await pyrogram_manager.create_client(
+            session_string=session_string,
+            name=client_name
         )
         
-        await client.start()
         otp_codes = []
         
         try:
-            # Search in "Telegram" chat first (most reliable)
+            # Search in "Telegram" chat first
             async for message in client.get_chat_history("Telegram", limit=20):
                 if message.text and any(keyword in message.text.lower() for keyword in ["code", "login", "verification"]):
                     pattern = r'\b\d{5}\b'  # 5 digit codes
@@ -423,25 +527,21 @@ async def otp_searcher(session_string, last_checked_time=None):
         except Exception as e:
             logger.error(f"Error searching OTP: {e}")
         
-        if client:
-            await client.stop()
+        # Cleanup client
+        await pyrogram_manager.cleanup_client(client_name)
         
         return otp_codes if otp_codes else []
         
     except Exception as e:
         logger.error(f"OTP searcher error: {e}")
-        if client:
-            try:
-                await client.stop()
-            except:
-                pass
+        if client and client.name:
+            await pyrogram_manager.cleanup_client(client.name)
         return []
 
 async def continuous_otp_monitor(session_string, user_id, phone, session_id, max_wait_time=1800):
     """Monitor for multiple OTPs for 30 minutes"""
     start_time = time.time()
     all_otps_found = []
-    last_otp_sent_time = None
     
     while time.time() - start_time < max_wait_time:
         try:
@@ -503,25 +603,14 @@ async def continuous_otp_monitor(session_string, user_id, phone, session_id, max
     return all_otps_found
 
 # -----------------------
-# NEW PYROGRAM LOGIN SYSTEM FOR ADDING ACCOUNTS
+# FIXED PYROGRAM LOGIN SYSTEM
 # -----------------------
-async def pyrogram_login_flow(user_id, phone_number, chat_id, message_id):
-    """Handle Pyrogram login flow for adding accounts"""
+async def pyrogram_login_flow_async(user_id, phone_number, chat_id, message_id):
+    """Async Pyrogram login flow for adding accounts"""
     try:
-        # Create in-memory Pyrogram client
+        # Create client
         client_name = f"login_{user_id}_{int(time.time())}"
-        client = Client(
-            name=client_name,
-            api_id=GLOBAL_API_ID,
-            api_hash=GLOBAL_API_HASH,
-            in_memory=True
-        )
-        
-        # Store client in dictionary
-        login_clients[user_id] = client
-        
-        # Connect client
-        await client.connect()
+        client = await pyrogram_manager.create_client(name=client_name)
         
         # Send code
         try:
@@ -530,125 +619,95 @@ async def pyrogram_login_flow(user_id, phone_number, chat_id, message_id):
                 "step": "waiting_otp",
                 "phone": phone_number,
                 "phone_code_hash": sent_code.phone_code_hash,
-                "client": client,
+                "client_name": client_name,
                 "chat_id": chat_id,
                 "message_id": message_id,
                 "country": login_states[user_id]["country"]
             }
             
-            # Update message
-            bot.edit_message_text(
-                f"📱 Phone: {phone_number}\n\n"
-                "📩 OTP sent! Enter the OTP you received:",
-                chat_id,
-                message_id,
-                reply_markup=InlineKeyboardMarkup().add(
-                    InlineKeyboardButton("❌ Cancel", callback_data="cancel_login")
-                )
-            )
+            return True
             
         except FloodWait as e:
-            await client.disconnect()
-            login_clients.pop(user_id, None)
+            await pyrogram_manager.cleanup_client(client_name)
             login_states.pop(user_id, None)
-            
-            bot.edit_message_text(
-                f"⏳ FloodWait: Please wait {e.value} seconds before trying again.",
-                chat_id,
-                message_id
-            )
-            return False
+            return False, f"FloodWait: Please wait {e.value} seconds"
             
         except Exception as e:
-            await client.disconnect()
-            login_clients.pop(user_id, None)
+            await pyrogram_manager.cleanup_client(client_name)
             login_states.pop(user_id, None)
-            
-            bot.edit_message_text(
-                f"❌ Error: {str(e)}",
-                chat_id,
-                message_id
-            )
-            return False
+            return False, str(e)
             
     except Exception as e:
         logger.error(f"Pyrogram login error: {e}")
-        return False
-    
-    return True
+        return False, str(e)
 
-async def verify_otp_and_save(user_id, otp_code):
+async def verify_otp_and_save_async(user_id, otp_code):
     """Verify OTP and save account to database"""
     try:
-        if user_id not in login_states or user_id not in login_clients:
+        if user_id not in login_states:
             return False, "Session expired"
         
         state = login_states[user_id]
-        client = login_clients[user_id]
+        client_name = state["client_name"]
+        
+        # Create client again for verification
+        client = await pyrogram_manager.create_client(name=client_name)
         
         try:
             # Try to sign in with OTP
-            await client.sign_in(
-                phone_number=state["phone"],
-                phone_code=otp_code,
-                phone_code_hash=state["phone_code_hash"]
+            success, status, error = await pyrogram_manager.sign_in_with_otp(
+                client,
+                state["phone"],
+                state["phone_code_hash"],
+                otp_code
             )
+            
+            if status == "password_required":
+                # 2FA required
+                login_states[user_id]["step"] = "waiting_password"
+                await pyrogram_manager.cleanup_client(client_name)
+                return False, "password_required"
+            
+            if not success:
+                await pyrogram_manager.cleanup_client(client_name)
+                login_states.pop(user_id, None)
+                return False, error or "OTP verification failed"
             
             # Get session string
-            session_string = await client.export_session_string()
+            session_string = await pyrogram_manager.get_session_string(client)
             
-            # Check if 2FA is enabled
-            two_step_password = None
-            if await client.is_user_authorized():
-                me = await client.get_me()
-                
-                # Save account to database
-                account_data = {
-                    "country": state["country"],
-                    "phone": state["phone"],
-                    "session_string": session_string,
-                    "has_2fa": False,  # We'll update if needed
-                    "two_step_password": None,
-                    "status": "active",
-                    "used": False,
-                    "created_at": datetime.utcnow(),
-                    "created_by": user_id,
-                    "api_id": GLOBAL_API_ID,
-                    "api_hash": GLOBAL_API_HASH
-                }
-                
-                # Insert account
-                accounts_col.insert_one(account_data)
-                
-                # Disconnect client
-                await client.disconnect()
-                
-                # Cleanup
-                login_clients.pop(user_id, None)
+            if not session_string:
+                await pyrogram_manager.cleanup_client(client_name)
                 login_states.pop(user_id, None)
-                
-                return True, session_string
-                
-        except SessionPasswordNeeded:
-            # 2FA required
-            login_states[user_id]["step"] = "waiting_password"
+                return False, "Failed to get session string"
             
-            bot.edit_message_text(
-                f"📱 Phone: {state['phone']}\n\n"
-                "🔐 2FA Password required!\n"
-                "Enter your 2-step verification password:",
-                state["chat_id"],
-                state["message_id"],
-                reply_markup=InlineKeyboardMarkup().add(
-                    InlineKeyboardButton("❌ Cancel", callback_data="cancel_login")
-                )
-            )
-            return False, "password_required"
+            # Save account to database
+            account_data = {
+                "country": state["country"],
+                "phone": state["phone"],
+                "session_string": session_string,
+                "has_2fa": False,
+                "two_step_password": None,
+                "status": "active",
+                "used": False,
+                "created_at": datetime.utcnow(),
+                "created_by": user_id,
+                "api_id": GLOBAL_API_ID,
+                "api_hash": GLOBAL_API_HASH
+            }
             
+            # Insert account
+            accounts_col.insert_one(account_data)
+            
+            # Cleanup
+            await pyrogram_manager.cleanup_client(client_name)
+            login_states.pop(user_id, None)
+            
+            return True, "Account added successfully"
+                
         except Exception as e:
             logger.error(f"OTP verification error: {e}")
-            await client.disconnect()
-            login_clients.pop(user_id, None)
+            await pyrogram_manager.cleanup_client(client_name)
             login_states.pop(user_id, None)
             return False, str(e)
             
@@ -656,21 +715,33 @@ async def verify_otp_and_save(user_id, otp_code):
         logger.error(f"Verify OTP error: {e}")
         return False, str(e)
 
-async def verify_2fa_password(user_id, password):
+async def verify_2fa_password_async(user_id, password):
     """Verify 2FA password and save account"""
     try:
-        if user_id not in login_states or user_id not in login_clients:
+        if user_id not in login_states:
             return False, "Session expired"
         
         state = login_states[user_id]
-        client = login_clients[user_id]
+        client_name = state["client_name"]
+        
+        # Create client
+        client = await pyrogram_manager.create_client(name=client_name)
         
         try:
             # Check password
-            await client.check_password(password)
+            success, error = await pyrogram_manager.sign_in_with_password(client, password)
+            
+            if not success:
+                await pyrogram_manager.cleanup_client(client_name)
+                return False, error
             
             # Get session string
-            session_string = await client.export_session_string()
+            session_string = await pyrogram_manager.get_session_string(client)
+            
+            if not session_string:
+                await pyrogram_manager.cleanup_client(client_name)
+                login_states.pop(user_id, None)
+                return False, "Failed to get session string"
             
             # Save account to database
             account_data = {
@@ -690,24 +761,22 @@ async def verify_2fa_password(user_id, password):
             # Insert account
             accounts_col.insert_one(account_data)
             
-            # Disconnect client
-            await client.disconnect()
-            
             # Cleanup
-            login_clients.pop(user_id, None)
+            await pyrogram_manager.cleanup_client(client_name)
             login_states.pop(user_id, None)
             
-            return True, session_string
+            return True, "Account added successfully"
             
         except Exception as e:
             logger.error(f"2FA password error: {e}")
+            await pyrogram_manager.cleanup_client(client_name)
             return False, str(e)
             
     except Exception as e:
         logger.error(f"2FA verification error: {e}")
         return False, str(e)
 
-async def logout_session(session_id, user_id):
+async def logout_session_async(session_id, user_id):
     """Logout from a specific Pyrogram session"""
     try:
         # Find the session
@@ -721,22 +790,19 @@ async def logout_session(session_id, user_id):
             return False, "Account not found"
         
         # Create client and logout
-        client = Client(
-            name=f"logout_{session_id}",
+        client_name = f"logout_{session_id}"
+        client = await pyrogram_manager.create_client(
             session_string=account["session_string"],
-            api_id=GLOBAL_API_ID,
-            api_hash=GLOBAL_API_HASH,
-            in_memory=True
+            name=client_name
         )
-        
-        await client.connect()
         
         # Check if authorized
         if await client.is_user_authorized():
             await client.log_out()
             logger.info(f"User {user_id} logged out from session {session_id}")
         
-        await client.disconnect()
+        # Cleanup
+        await pyrogram_manager.cleanup_client(client_name)
         
         # Update session status
         otp_sessions_col.update_one(
@@ -760,6 +826,49 @@ async def logout_session(session_id, user_id):
         
         return True, "Logged out successfully"
         
+    except Exception as e:
+        logger.error(f"Logout error: {e}")
+        return False, str(e)
+
+# -----------------------
+# SYNC WRAPPERS FOR ASYNC FUNCTIONS
+# -----------------------
+def pyrogram_login_flow_sync(user_id, phone_number, chat_id, message_id):
+    """Sync wrapper for async login flow"""
+    try:
+        return async_manager.run_async(
+            pyrogram_login_flow_async(user_id, phone_number, chat_id, message_id)
+        )
+    except Exception as e:
+        logger.error(f"Login flow error: {e}")
+        return False, str(e)
+
+def verify_otp_and_save_sync(user_id, otp_code):
+    """Sync wrapper for async OTP verification"""
+    try:
+        return async_manager.run_async(
+            verify_otp_and_save_async(user_id, otp_code)
+        )
+    except Exception as e:
+        logger.error(f"OTP verification error: {e}")
+        return False, str(e)
+
+def verify_2fa_password_sync(user_id, password):
+    """Sync wrapper for async 2FA verification"""
+    try:
+        return async_manager.run_async(
+            verify_2fa_password_async(user_id, password)
+        )
+    except Exception as e:
+        logger.error(f"2FA verification error: {e}")
+        return False, str(e)
+
+def logout_session_sync(session_id, user_id):
+    """Sync wrapper for async logout"""
+    try:
+        return async_manager.run_async(
+            logout_session_async(session_id, user_id)
+        )
     except Exception as e:
         logger.error(f"Logout error: {e}")
         return False, str(e)
@@ -1027,9 +1136,7 @@ def handle_callbacks(call):
         elif data == "out_of_stock":
             bot.answer_callback_query(call.id, "❌ Out of Stock! No accounts available.", show_alert=True)
         
-        # -----------------------
-        # ADMIN FEATURES FROM FIRST CODE (Only recharge/balance/admin features)
-        # -----------------------
+        # ADMIN FEATURES
         elif data == "broadcast_menu":
             if is_admin(user_id):
                 bot.answer_callback_query(call.id)
@@ -1063,7 +1170,7 @@ def handle_callbacks(call):
         elif data == "admin_deduct_start":
             if is_admin(user_id):
                 bot.answer_callback_query(call.id)
-                # Admin ke liye balance deduct karne ka process start karein
+                # Admin balance deduction process
                 admin_deduct_state[user_id] = {"step": "ask_user_id"}
                 bot.send_message(call.message.chat.id, "👤 Enter User ID whose balance you want to deduct:")
             else:
@@ -1116,7 +1223,7 @@ def handle_callbacks(call):
                 bot.answer_callback_query(call.id, "❌ Unauthorized", show_alert=True)
         
         elif data.startswith("approve_rech|") or data.startswith("cancel_rech|"):
-            # From first code - manual recharge approval
+            # Manual recharge approval
             if is_admin(user_id):
                 parts = data.split("|")
                 action = parts[0]
@@ -1208,16 +1315,16 @@ def handle_cancel_login(call):
     user_id = call.from_user.id
     
     # Cleanup any active client
-    if user_id in login_clients:
-        try:
-            client = login_clients[user_id]
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(client.disconnect())
-            loop.close()
-        except:
-            pass
-        login_clients.pop(user_id, None)
+    if user_id in login_states:
+        state = login_states[user_id]
+        if "client_name" in state:
+            try:
+                # Run async cleanup
+                async_manager.run_async(
+                    pyrogram_manager.cleanup_client(state["client_name"])
+                )
+            except:
+                pass
     
     login_states.pop(user_id, None)
     
@@ -1231,11 +1338,7 @@ def handle_cancel_login(call):
 def handle_logout_session(user_id, session_id, chat_id, callback_id):
     """Handle user logout from session"""
     try:
-        # Run async logout function
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        success, message = loop.run_until_complete(logout_session(session_id, user_id))
-        loop.close()
+        success, message = logout_session_sync(session_id, user_id)
         
         if success:
             bot.answer_callback_query(callback_id, "✅ Logged out successfully!", show_alert=True)
@@ -1253,7 +1356,7 @@ def handle_logout_session(user_id, session_id, chat_id, callback_id):
         bot.answer_callback_query(callback_id, "❌ Error logging out", show_alert=True)
 
 # -----------------------
-# MESSAGE HANDLER FOR LOGIN FLOW
+# MESSAGE HANDLER FOR LOGIN FLOW (FIXED)
 # -----------------------
 @bot.message_handler(func=lambda m: login_states.get(m.from_user.id, {}).get("step") in ["phone", "waiting_otp", "waiting_password"])
 def handle_login_flow_messages(msg):
@@ -1275,14 +1378,25 @@ def handle_login_flow_messages(msg):
             bot.send_message(chat_id, "❌ Invalid phone number format. Please enter with country code:\nExample: +919876543210")
             return
         
-        # Start Pyrogram login flow
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        success = loop.run_until_complete(pyrogram_login_flow(user_id, phone, chat_id, message_id))
-        loop.close()
+        # Start Pyrogram login flow using sync wrapper
+        success, message = pyrogram_login_flow_sync(user_id, phone, chat_id, message_id)
         
-        if not success:
-            bot.send_message(chat_id, "❌ Failed to send OTP. Please try again.")
+        if success:
+            bot.edit_message_text(
+                f"📱 Phone: {phone}\n\n"
+                "📩 OTP sent! Enter the OTP you received:",
+                chat_id,
+                message_id,
+                reply_markup=InlineKeyboardMarkup().add(
+                    InlineKeyboardButton("❌ Cancel", callback_data="cancel_login")
+                )
+            )
+        else:
+            bot.edit_message_text(
+                f"❌ Failed to send OTP: {message}\n\nPlease try again.",
+                chat_id,
+                message_id
+            )
             login_states.pop(user_id, None)
     
     elif step == "waiting_otp":
@@ -1293,10 +1407,7 @@ def handle_login_flow_messages(msg):
             bot.send_message(chat_id, "❌ Invalid OTP format. Please enter 5-digit OTP:")
             return
         
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        success, message = loop.run_until_complete(verify_otp_and_save(user_id, otp))
-        loop.close()
+        success, message = verify_otp_and_save_sync(user_id, otp)
         
         if success:
             # Account added successfully
@@ -1317,8 +1428,17 @@ def handle_login_flow_messages(msg):
             login_states.pop(user_id, None)
             
         elif message == "password_required":
-            # 2FA required, already handled in verify_otp_and_save
-            pass
+            # 2FA required
+            bot.edit_message_text(
+                f"📱 Phone: {state['phone']}\n\n"
+                "🔐 2FA Password required!\n"
+                "Enter your 2-step verification password:",
+                chat_id,
+                message_id,
+                reply_markup=InlineKeyboardMarkup().add(
+                    InlineKeyboardButton("❌ Cancel", callback_data="cancel_login")
+                )
+            )
         else:
             bot.edit_message_text(
                 f"❌ OTP verification failed: {message}\n\nPlease try again.",
@@ -1335,10 +1455,7 @@ def handle_login_flow_messages(msg):
             bot.send_message(chat_id, "❌ Password cannot be empty. Enter 2FA password:")
             return
         
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        success, message = loop.run_until_complete(verify_2fa_password(user_id, password))
-        loop.close()
+        success, message = verify_2fa_password_sync(user_id, password)
         
         if success:
             # Account added successfully with 2FA
@@ -1708,7 +1825,7 @@ def show_user_ranking(chat_id):
         bot.send_message(chat_id, f"❌ Error generating ranking: {str(e)}")
 
 # -----------------------
-# FUNCTIONS FROM FIRST CODE (Only recharge/admin features)
+# FUNCTIONS FROM FIRST CODE
 # -----------------------
 def ask_refund_user(message):
     try:
@@ -1831,7 +1948,7 @@ def broadcast_thread(source_msg, text, is_photo, is_video, is_document):
         pass
 
 # -----------------------
-# COUNTRY SELECTION FUNCTIONS (UPDATED)
+# COUNTRY SELECTION FUNCTIONS
 # -----------------------
 def show_countries(chat_id, message_id=None):
     countries = get_all_countries()
@@ -1931,7 +2048,7 @@ def show_country_accounts(chat_id, message_id, country_name):
         bot.send_message(chat_id, text, reply_markup=markup, parse_mode="Markdown")
 
 # -----------------------
-# RECHARGE FUNCTIONS (UPDATED)
+# RECHARGE FUNCTIONS
 # -----------------------
 def show_recharge_options(chat_id, message_id):
     text = "💳 **Recharge Options**\n\nChoose payment method:"
@@ -1967,19 +2084,19 @@ def process_recharge_amount_auto(msg):
         
         user_id = msg.from_user.id
         
-        # IMB payment order create karein
+        # IMB payment order create
         creating_msg = bot.send_message(msg.chat.id, "🔄 Creating payment link, please wait...")
         
         payment_result = create_imb_payment_order(user_id, amount)
 
-        # Creating message delete karein
+        # Delete creating message
         try:
             bot.delete_message(msg.chat.id, creating_msg.message_id)
         except:
-            pass  
+            pass
         
         if payment_result["success"]:
-            # Payment details store karein
+            # Store payment details
             pending_messages[user_id] = {
                 "recharge_amount": amount,
                 "order_id": payment_result["order_id"],
@@ -1987,7 +2104,7 @@ def process_recharge_amount_auto(msg):
             }
             user_stage[user_id] = "waiting_payment"
             
-            # User ko payment link bhejein - ONLY PAY BUTTON
+            # Send payment link to user - ONLY PAY BUTTON
             kb = InlineKeyboardMarkup()
             kb.add(InlineKeyboardButton("💳 Pay Now", url=payment_result["payment_url"]))
             
@@ -1998,8 +2115,8 @@ def process_recharge_amount_auto(msg):
                 f"• Order ID: `{payment_result['order_id']}`\n\n"
                 f"**Instructions:**\n"
                 f"1. Click 'Pay Now' button to complete payment\n"
-                f"2. Payment auto verify hoga within 2 minutes\n"
-                f"3. Wallet automatically update hojayega\n\n"
+                f"2. Payment will auto verify within 2 minutes\n"
+                f"3. Wallet will update automatically\n\n"
                 f"Click below to complete payment:",
                 parse_mode="Markdown",
                 reply_markup=kb
@@ -2110,9 +2227,7 @@ def chat_handler(msg):
     
     ensure_user_exists(user_id, msg.from_user.first_name or "Unknown", msg.from_user.username)
     
-    # ---------------------------------------------------
-    # ADMIN DEDUCT PROCESS HANDLER (From first code)
-    # ---------------------------------------------------
+    # ADMIN DEDUCT PROCESS HANDLER
     if user_id == ADMIN_ID and user_id in admin_deduct_state:
         # Check which step admin is on
         state = admin_deduct_state[user_id]
@@ -2247,7 +2362,7 @@ def chat_handler(msg):
             process_broadcast(msg)
         return
     
-    # Manual payment proof handler (From first code)
+    # Manual payment proof handler
     if user_stage.get(user_id) == "waiting_recharge_proof":
         pending_messages.setdefault(user_id, {})
         amount = pending_messages[user_id].get("recharge_amount", 0)
@@ -2432,11 +2547,30 @@ def process_purchase(user_id, account_id, chat_id, message_id, callback_id):
         
         # Start OTP monitoring in background for 30 minutes
         if account.get('session_string'):
-            threading.Thread(
-                target=start_otp_monitoring, 
-                args=(session_id, user_id, account['phone'], account['session_string']), 
-                daemon=True
-            ).start()
+            # Run async OTP monitoring in a thread
+            def start_otp_monitoring_thread():
+                try:
+                    # Create new event loop for this thread
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    
+                    # Run the monitoring
+                    loop.run_until_complete(
+                        continuous_otp_monitor(
+                            account['session_string'],
+                            user_id,
+                            account['phone'],
+                            session_id,
+                            1800
+                        )
+                    )
+                    loop.close()
+                except Exception as e:
+                    logger.error(f"OTP monitoring thread error: {e}")
+            
+            # Start thread
+            thread = threading.Thread(target=start_otp_monitoring_thread, daemon=True)
+            thread.start()
         
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("🛒 Buy Another", callback_data="buy_account"))
@@ -2476,79 +2610,6 @@ def process_purchase(user_id, account_id, chat_id, message_id, callback_id):
             bot.answer_callback_query(callback_id, "❌ Purchase failed", show_alert=True)
         except:
             pass
-
-def start_otp_monitoring(session_id, user_id, phone, session_string):
-    """Start monitoring for multiple OTPs in background for 30 minutes"""
-    try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        async def monitor_otp():
-            try:
-                # Send monitoring started message
-                bot.send_message(
-                    user_id,
-                    f"🔍 **OTP Monitoring Started**\n\n"
-                    f"📱 Phone: `{phone}`\n"
-                    f"⏰ Duration: 30 minutes\n"
-                    f"🔢 Searching for ALL OTPs...\n\n"
-                    f"Please login in Telegram X app now.\n"
-                    f"You'll receive EVERY OTP here automatically!"
-                )
-                
-                # Start continuous OTP monitoring for 30 minutes
-                otp_codes = await continuous_otp_monitor(session_string, user_id, phone, session_id, 1800)
-                
-                if otp_codes:
-                    # Send logout option button
-                    markup = InlineKeyboardMarkup()
-                    markup.add(InlineKeyboardButton("🚪 Logout", callback_data=f"logout_session_{session_id}"))
-                    
-                    bot.send_message(
-                        user_id,
-                        f"📊 **OTP Monitoring Summary**\n\n"
-                        f"📱 Phone: `{phone}`\n"
-                        f"🔢 Total OTPs Received: {len(otp_codes)}\n"
-                        f"⏰ Monitoring completed.\n\n"
-                        f"Click 'Logout' to end your session:",
-                        reply_markup=markup
-                    )
-                else:
-                    # Timeout - send message but don't complete order automatically
-                    bot.send_message(
-                        user_id,
-                        f"⏰ **OTP Monitoring Ended**\n\n"
-                        f"📱 Phone: `{phone}`\n"
-                        f"⏳ 30 minutes monitoring completed.\n"
-                        f"❌ No OTPs received automatically.\n\n"
-                        f"If you received OTP manually, you can still complete the order."
-                    )
-                    
-                    otp_sessions_col.update_one(
-                        {"session_id": session_id},
-                        {"$set": {"status": "timeout", "timeout_at": datetime.utcnow()}}
-                    )
-                
-            except Exception as e:
-                logger.error(f"OTP monitoring error: {e}")
-                bot.send_message(
-                    user_id,
-                    f"❌ **OTP Monitoring Error**\n\n"
-                    f"📱 Phone: `{phone}`\n"
-                    f"Error: {str(e)}\n\n"
-                    f"Please contact support if you need help."
-                )
-                
-                otp_sessions_col.update_one(
-                    {"session_id": session_id},
-                    {"$set": {"status": "error", "error": str(e)}}
-                )
-        
-        loop.run_until_complete(monitor_otp())
-        loop.close()
-        
-    except Exception as e:
-        logger.error(f"OTP monitoring failed: {e}")
 
 def show_my_orders(user_id, chat_id):
     orders = list(orders_col.find({"user_id": user_id}).sort("created_at", -1).limit(5))
@@ -2657,7 +2718,7 @@ def reject_recharge(recharge_id, admin_chat_id):
 # RUN BOT
 # -----------------------
 if __name__ == "__main__":
-    logger.info(f"🤖 Final OTP Bot Starting...")
+    logger.info(f"🤖 Fixed OTP Bot Starting...")
     logger.info(f"Admin ID: {ADMIN_ID}")
     logger.info(f"Bot Token: {BOT_TOKEN[:10]}...")
     logger.info(f"Global API ID: {GLOBAL_API_ID}")
@@ -2665,6 +2726,7 @@ if __name__ == "__main__":
     logger.info(f"Referral Commission: {REFERRAL_COMMISSION}%")
     
     # Start background payment checker (ONLY ONCE)
+    payment_checker_started = False
     if not payment_checker_started:
         payment_checker_thread = threading.Thread(
             target=check_pending_payments,
@@ -2672,7 +2734,7 @@ if __name__ == "__main__":
         )
         payment_checker_thread.start()
         payment_checker_started = True
-        logger.info("✅ Payment checker thread started (only once)")
+        logger.info("✅ Payment checker thread started")
     
     try:
         bot.infinity_polling(timeout=60, long_polling_timeout=60)
@@ -2680,4 +2742,3 @@ if __name__ == "__main__":
         logger.error(f"Bot error: {e}")
         time.sleep(30)
         bot.infinity_polling(timeout=60, long_polling_timeout=60)
-
