@@ -7,6 +7,7 @@ import logging
 import re
 import threading
 import time
+import os
 import asyncio
 from datetime import datetime
 from pyrogram import Client
@@ -17,20 +18,6 @@ from pyrogram.errors import (
 )
 
 logger = logging.getLogger(__name__)
-
-# Global event loop for async operations
-_global_event_loop = None
-
-def get_event_loop():
-    """Get or create a global event loop"""
-    global _global_event_loop
-    if _global_event_loop is None:
-        try:
-            _global_event_loop = asyncio.get_running_loop()
-        except RuntimeError:
-            _global_event_loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(_global_event_loop)
-    return _global_event_loop
 
 # -----------------------
 # ASYNC MANAGEMENT
@@ -43,50 +30,22 @@ class AsyncManager:
     def run_async(self, coro):
         """Run async coroutine from sync context"""
         try:
-            loop = get_event_loop()
-            
-            # Check if we're in the event loop thread
-            if loop.is_running():
-                # Run in a new thread with its own event loop
-                return self._run_in_thread(coro)
-            else:
-                # Run in current event loop
+            # Create a new event loop for this thread
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
                 return loop.run_until_complete(coro)
-                
+            finally:
+                loop.close()
         except Exception as e:
             logger.error(f"Async operation failed: {e}")
             raise
-    
-    def _run_in_thread(self, coro):
-        """Run coroutine in a separate thread with its own event loop"""
-        result = None
-        exception = None
-        
-        def run():
-            nonlocal result, exception
-            try:
-                # Create new event loop for this thread
-                new_loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(new_loop)
-                result = new_loop.run_until_complete(coro)
-                new_loop.close()
-            except Exception as e:
-                exception = e
-        
-        # Run in thread
-        thread = threading.Thread(target=run)
-        thread.start()
-        thread.join()
-        
-        if exception:
-            raise exception
-        return result
 
 # -----------------------
 # PYROGRAM CLIENT MANAGER (FIXED)
 # -----------------------
 class PyrogramClientManager:
-    """Fixed Pyrogram client management without ping issues"""
+    """Fixed Pyrogram client management with proper session handling"""
     def __init__(self, api_id, api_hash):
         self.api_id = api_id
         self.api_hash = api_hash
@@ -95,7 +54,7 @@ class PyrogramClientManager:
     async def create_client(self, session_string=None, name=None):
         """Create a Pyrogram client with proper settings"""
         if name is None:
-            name = f"client_{int(time.time())}"
+            name = f"client_{int(time.time())}_{threading.get_ident()}"
             
         # Create client with settings to avoid ping issues
         client = Client(
@@ -106,7 +65,8 @@ class PyrogramClientManager:
             in_memory=True,
             no_updates=True,  # Disable updates
             takeout=False,    # Disable takeout
-            sleep_threshold=0  # Disable automatic sleeping
+            sleep_threshold=0,  # Disable automatic sleeping
+            workdir="./sessions"  # Set work directory for sessions
         )
         
         return client
@@ -120,6 +80,7 @@ class PyrogramClientManager:
         except FloodWait as e:
             return False, None, f"FloodWait: Please wait {e.value} seconds"
         except Exception as e:
+            logger.error(f"Send code error: {e}")
             return False, None, str(e)
     
     async def sign_in_with_otp(self, client, phone_number, phone_code_hash, otp_code):
@@ -134,6 +95,7 @@ class PyrogramClientManager:
         except SessionPasswordNeeded:
             return False, "password_required", None
         except Exception as e:
+            logger.error(f"Sign in error: {e}")
             return False, "error", str(e)
     
     async def sign_in_with_password(self, client, password):
@@ -142,6 +104,7 @@ class PyrogramClientManager:
             await client.check_password(password)
             return True, None
         except Exception as e:
+            logger.error(f"Password check error: {e}")
             return False, str(e)
     
     async def get_session_string(self, client):
@@ -155,19 +118,25 @@ class PyrogramClientManager:
             return None
     
     async def safe_disconnect(self, client):
-        """Safely disconnect client without ping errors"""
+        """Safely disconnect client"""
         try:
-            if client and hasattr(client, 'is_connected') and client.is_connected:
-                # Stop session first to prevent ping errors
-                if hasattr(client, 'session') and client.session:
-                    try:
-                        await client.session.stop()
-                    except:
-                        pass
+            if client:
                 await client.disconnect()
+                await client.stop()
         except Exception as e:
             logger.error(f"Error disconnecting client: {e}")
-            # Ignore disconnection errors
+        finally:
+            # Clean up session files if they exist
+            try:
+                session_files = [
+                    f"./{client.name}.session",
+                    f"./{client.name}.session-journal"
+                ]
+                for file in session_files:
+                    if os.path.exists(file):
+                        os.remove(file)
+            except:
+                pass
 
 # -----------------------
 # ACCOUNT MANAGEMENT FUNCTIONS
@@ -397,34 +366,43 @@ async def logout_session_async(session_id, user_id, otp_sessions_col, accounts_c
         return False, str(e)
 
 # -----------------------
-# OTP SEARCHER FUNCTIONS
+# OTP SEARCHER FUNCTIONS (SIMPLIFIED)
 # -----------------------
 async def otp_searcher(session_string, api_id=6435225, api_hash="4e984ea35f854762dcde906dce426c2d"):
-    """Search for OTP in Telegram messages"""
+    """Search for OTP in Telegram messages - SIMPLIFIED VERSION"""
     try:
         manager = PyrogramClientManager(api_id, api_hash)
         client = await manager.create_client(session_string)
-        await client.connect()
         
         otp_codes = []
         
         try:
-            # Search in "Telegram" chat first
-            async for message in client.get_chat_history("Telegram", limit=20):
-                if message.text and any(keyword in message.text.lower() for keyword in ["code", "login", "verification"]):
-                    pattern = r'\b\d{5}\b'  # 5 digit codes
-                    matches = re.findall(pattern, message.text)
-                    for match in matches:
-                        if match not in otp_codes:
-                            otp_codes.append(match)
-                            logger.info(f"OTP found in Telegram chat: {match}")
+            await client.connect()
             
+            # SIMPLIFIED: Just try to get the last message
+            try:
+                # Get chat with Telegram
+                async for message in client.get_chat_history("Telegram", limit=3):
+                    if message.text:
+                        # Look for OTP patterns
+                        pattern = r'\b\d{5}\b'
+                        matches = re.findall(pattern, message.text)
+                        for match in matches:
+                            if match not in otp_codes:
+                                otp_codes.append(match)
+                                logger.info(f"OTP found: {match}")
+                                break  # Found one, good enough
+                    if otp_codes:
+                        break
+            except Exception as e:
+                logger.error(f"Error getting messages: {e}")
+                
         except Exception as e:
-            logger.error(f"Error searching OTP: {e}")
+            logger.error(f"Connection error: {e}")
+        finally:
+            await manager.safe_disconnect(client)
         
-        await manager.safe_disconnect(client)
-        
-        return otp_codes if otp_codes else []
+        return otp_codes
         
     except Exception as e:
         logger.error(f"OTP searcher error: {e}")
@@ -457,7 +435,7 @@ async def continuous_otp_monitor(session_string, user_id, phone, session_id, max
                 
                 if bot:
                     try:
-                        # Create inline keyboard
+                        # Import inside function to avoid circular import
                         from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
                         
                         markup = InlineKeyboardMarkup(row_width=2)
@@ -492,12 +470,12 @@ async def continuous_otp_monitor(session_string, user_id, phone, session_id, max
                     except Exception as e:
                         logger.error(f"Failed to send OTP message: {e}")
             
-            # Wait 8 seconds before checking again
-            await asyncio.sleep(8)
+            # Wait 15 seconds before checking again (less frequent)
+            await asyncio.sleep(15)
             
         except Exception as e:
             logger.error(f"OTP monitor error: {e}")
-            await asyncio.sleep(8)
+            await asyncio.sleep(15)
     
     return all_otps_found
 
