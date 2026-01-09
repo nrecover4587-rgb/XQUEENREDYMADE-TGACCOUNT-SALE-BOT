@@ -1,4 +1,3 @@
-
 """
 Account Management Module for OTP Bot
 Handles Pyrogram login, OTP verification, and session management
@@ -115,6 +114,10 @@ class PyrogramClientManager:
     async def send_code(self, client, phone_number):
         """Send verification code"""
         try:
+            # Disconnect first if already connected
+            if hasattr(client, 'is_connected') and client.is_connected:
+                await self.safe_disconnect(client)
+            
             await client.connect()
             sent_code = await client.send_code(phone_number)
             return True, sent_code.phone_code_hash, None
@@ -126,6 +129,10 @@ class PyrogramClientManager:
     async def sign_in_with_otp(self, client, phone_number, phone_code_hash, otp_code):
         """Sign in with OTP"""
         try:
+            # Ensure client is connected
+            if not hasattr(client, 'is_connected') or not client.is_connected:
+                await client.connect()
+            
             await client.sign_in(
                 phone_number=phone_number,
                 phone_code=otp_code,
@@ -140,6 +147,10 @@ class PyrogramClientManager:
     async def sign_in_with_password(self, client, password):
         """Sign in with 2FA password"""
         try:
+            # Ensure client is connected
+            if not hasattr(client, 'is_connected') or not client.is_connected:
+                await client.connect()
+            
             await client.check_password(password)
             return True, None
         except Exception as e:
@@ -148,8 +159,9 @@ class PyrogramClientManager:
     async def get_session_string(self, client):
         """Get session string from authorized client"""
         try:
-            # Connect first
-            await client.connect()
+            # Ensure client is connected
+            if not hasattr(client, 'is_connected') or not client.is_connected:
+                await client.connect()
             
             # In Pyrogram v2, check authorization by getting "me"
             try:
@@ -157,8 +169,10 @@ class PyrogramClientManager:
                 if me:
                     session_string = await client.export_session_string()
                     return session_string
+                else:
+                    return None
             except Exception as e:
-                logger.error(f"User not authorized: {e}")
+                logger.error(f"User not authorized or error getting me: {e}")
                 return None
         except Exception as e:
             logger.error(f"Error getting session string: {e}")
@@ -359,99 +373,6 @@ async def verify_2fa_password_async(login_states, accounts_col, user_id, passwor
         login_states.pop(user_id, None)
         return False, str(e)
 
-async def logout_session_async(session_id, user_id, otp_sessions_col, accounts_col, orders_col):
-    """Logout from a specific Pyrogram session"""
-    try:
-        # Find the session
-        session_data = otp_sessions_col.find_one({"session_id": session_id})
-        if not session_data:
-            return False, "Session not found"
-        
-        # Get session string from account
-        account = accounts_col.find_one({"_id": session_data["account_id"]})
-        if not account or not account.get("session_string"):
-            return False, "Account not found"
-        
-        # Create client and logout
-        manager = PyrogramClientManager(
-            api_id=account.get("api_id", 6435225),
-            api_hash=account.get("api_hash", "4e984ea35f854762dcde906dce426c2d")
-        )
-        client = await manager.create_client(account["session_string"])
-        
-        # Check if authorized
-        try:
-            await client.connect()
-            me = await client.get_me()
-            if me:
-                await client.log_out()
-                logger.info(f"User {user_id} logged out from session {session_id}")
-        except Exception as e:
-            logger.error(f"Logout check failed: {e}")
-        
-        # Cleanup
-        await manager.safe_disconnect(client)
-        
-        # Update session status
-        otp_sessions_col.update_one(
-            {"session_id": session_id},
-            {"$set": {
-                "status": "logged_out",
-                "logged_out_at": datetime.utcnow(),
-                "logged_out_by": user_id
-            }}
-        )
-        
-        # Update order status if exists
-        orders_col.update_one(
-            {"session_id": session_id},
-            {"$set": {
-                "status": "completed",
-                "completed_at": datetime.utcnow(),
-                "logged_out": True
-            }}
-        )
-        
-        return True, "Logged out successfully"
-        
-    except Exception as e:
-        logger.error(f"Logout error: {e}")
-        return False, str(e)
-
-# -----------------------
-# OTP SEARCHER FUNCTIONS
-# -----------------------
-async def otp_searcher(session_string, api_id=6435225, api_hash="4e984ea35f854762dcde906dce426c2d"):
-    """Search for OTP in Telegram messages"""
-    try:
-        manager = PyrogramClientManager(api_id, api_hash)
-        client = await manager.create_client(session_string)
-        await client.connect()
-        
-        otp_codes = []
-        
-        try:
-            # Search in "Telegram" chat first
-            async for message in client.get_chat_history("Telegram", limit=20):
-                if message.text and any(keyword in message.text.lower() for keyword in ["code", "login", "verification"]):
-                    pattern = r'\b\d{5}\b'  # 5 digit codes
-                    matches = re.findall(pattern, message.text)
-                    for match in matches:
-                        if match not in otp_codes:
-                            otp_codes.append(match)
-                            logger.info(f"OTP found in Telegram chat: {match}")
-            
-        except Exception as e:
-            logger.error(f"Error searching OTP: {e}")
-        
-        await manager.safe_disconnect(client)
-        
-        return otp_codes if otp_codes else []
-        
-    except Exception as e:
-        logger.error(f"OTP searcher error: {e}")
-        return []
-
 # -----------------------
 # SYNC WRAPPERS FOR ASYNC FUNCTIONS
 # -----------------------
@@ -495,21 +416,10 @@ class AccountManager:
         except Exception as e:
             logger.error(f"2FA verification error: {e}")
             return False, str(e)
-    
-    def logout_session_sync(self, session_id, user_id, otp_sessions_col, accounts_col, orders_col):
-        """Sync wrapper for async logout"""
-        try:
-            return self.async_manager.run_async(
-                logout_session_async(session_id, user_id, otp_sessions_col, accounts_col, orders_col)
-            )
-        except Exception as e:
-            logger.error(f"Logout error: {e}")
-            return False, str(e)
 
 # Export everything
 __all__ = [
     'AsyncManager',
     'PyrogramClientManager',
-    'AccountManager',
-    'otp_searcher'
+    'AccountManager'
 ]
