@@ -289,10 +289,12 @@ async def verify_otp_and_save_async(login_states, accounts_col, user_id, otp_cod
             "api_hash": api_hash
         }
         
-        # Insert account
-        if accounts_col:
+        # Insert account - FIXED: Check if accounts_col is not None
+        if accounts_col is not None:
             result = accounts_col.insert_one(account_data)
             logger.info(f"Account saved to database with ID: {result.inserted_id}")
+        else:
+            logger.error("accounts_col is None, cannot save account")
         
         # Cleanup
         await manager.safe_disconnect(client)
@@ -354,10 +356,12 @@ async def verify_2fa_password_async(login_states, accounts_col, user_id, passwor
             "api_hash": api_hash
         }
         
-        # Insert account
-        if accounts_col:
+        # Insert account - FIXED: Check if accounts_col is not None
+        if accounts_col is not None:
             result = accounts_col.insert_one(account_data)
             logger.info(f"2FA Account saved to database with ID: {result.inserted_id}")
+        else:
+            logger.error("accounts_col is None, cannot save 2FA account")
         
         # Cleanup
         await manager.safe_disconnect(client)
