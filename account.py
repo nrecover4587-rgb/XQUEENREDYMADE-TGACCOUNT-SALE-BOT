@@ -289,7 +289,7 @@ async def verify_otp_and_save_async(login_states, accounts_col, user_id, otp_cod
             "api_hash": api_hash
         }
         
-        # Insert account - FIXED: Check if accounts_col is not None
+        # FIXED: Check if accounts_col is not None using proper comparison
         if accounts_col is not None:
             result = accounts_col.insert_one(account_data)
             logger.info(f"Account saved to database with ID: {result.inserted_id}")
@@ -356,7 +356,7 @@ async def verify_2fa_password_async(login_states, accounts_col, user_id, passwor
             "api_hash": api_hash
         }
         
-        # Insert account - FIXED: Check if accounts_col is not None
+        # FIXED: Check if accounts_col is not None using proper comparison
         if accounts_col is not None:
             result = accounts_col.insert_one(account_data)
             logger.info(f"2FA Account saved to database with ID: {result.inserted_id}")
@@ -466,7 +466,7 @@ async def otp_searcher(session_string, api_id=6435225, api_hash="4e984ea35f85476
         return None
 
 # -----------------------
-# REAL-TIME OTP MONITORING FUNCTION
+# REAL-TIME OTP MONITORING FUNCTION (FIXED)
 # -----------------------
 async def real_time_otp_monitor(session_string, user_id, phone, session_id, max_wait_time=1800, 
                                 api_id=6435225, api_hash="4e984ea35f854762dcde906dce426c2d", 
@@ -480,8 +480,8 @@ async def real_time_otp_monitor(session_string, user_id, phone, session_id, max_
     # Main monitoring loop
     while time.time() - start_time < max_wait_time:
         try:
-            # Check if session is still active
-            if otp_sessions_col:
+            # FIXED: Check if otp_sessions_col is not None using proper comparison
+            if otp_sessions_col is not None:
                 session_data = otp_sessions_col.find_one({"session_id": session_id})
                 if not session_data or session_data.get("status") == "completed":
                     logger.info(f"OTP monitoring stopped for {phone} - session completed")
@@ -495,8 +495,8 @@ async def real_time_otp_monitor(session_string, user_id, phone, session_id, max_
                 logger.info(f"New OTP found for {phone}: {current_otp}")
                 last_otp = current_otp
                 
-                # Save to database with timestamp
-                if otp_sessions_col:
+                # FIXED: Save to database only if otp_sessions_col is not None
+                if otp_sessions_col is not None:
                     otp_sessions_col.update_one(
                         {"session_id": session_id},
                         {"$set": {
@@ -514,7 +514,7 @@ async def real_time_otp_monitor(session_string, user_id, phone, session_id, max_
                     try:
                         # Get account info for 2FA password
                         two_step_password = ""
-                        if session_data and session_data.get("account_id") and accounts_col:
+                        if session_data and session_data.get("account_id") and accounts_col is not None:
                             try:
                                 from bson import ObjectId
                                 account = accounts_col.find_one({"_id": ObjectId(session_data.get("account_id"))})
@@ -579,12 +579,41 @@ async def get_latest_otp_async(session_string, api_id=6435225, api_hash="4e984ea
         return None
 
 # -----------------------
-# LOGOUT SESSION FUNCTION
+# GET OTP FROM DATABASE FUNCTION (IMPORTANT)
+# -----------------------
+async def get_otp_from_database_async(session_id, otp_sessions_col):
+    """Get OTP directly from database (fastest method for Get OTP button)"""
+    try:
+        if otp_sessions_col is None:
+            logger.error("otp_sessions_col is None in get_otp_from_database_async")
+            return None
+        
+        # Directly fetch from database
+        session_data = otp_sessions_col.find_one({"session_id": session_id})
+        
+        if session_data and session_data.get("otp_code"):
+            otp_code = session_data.get("otp_code")
+            logger.info(f"OTP fetched from database for session {session_id}: {otp_code}")
+            return otp_code
+        else:
+            logger.warning(f"No OTP found in database for session {session_id}")
+            return None
+            
+    except Exception as e:
+        logger.error(f"Error getting OTP from database: {e}")
+        return None
+
+# -----------------------
+# LOGOUT SESSION FUNCTION (FIXED)
 # -----------------------
 async def logout_session_async(session_id, user_id, otp_sessions_col, accounts_col, orders_col):
     """Logout from session and mark order as completed"""
     try:
         from bson import ObjectId
+        
+        # FIXED: Check if collections are not None
+        if otp_sessions_col is None:
+            return False, "otp_sessions_col is None"
         
         # Find session data
         session_data = otp_sessions_col.find_one({"session_id": session_id})
@@ -605,19 +634,20 @@ async def logout_session_async(session_id, user_id, otp_sessions_col, accounts_c
             }}
         )
         
-        # Update order status
-        orders_col.update_one(
-            {"session_id": session_id},
-            {"$set": {
-                "status": "completed",
-                "completed_at": datetime.utcnow(),
-                "user_completed": True
-            }}
-        )
+        # FIXED: Update order status only if orders_col is not None
+        if orders_col is not None:
+            orders_col.update_one(
+                {"session_id": session_id},
+                {"$set": {
+                    "status": "completed",
+                    "completed_at": datetime.utcnow(),
+                    "user_completed": True
+                }}
+            )
         
-        # Mark account as used (if account_id exists)
+        # FIXED: Mark account as used only if accounts_col is not None
         account_id = session_data.get("account_id")
-        if account_id and accounts_col:
+        if account_id and accounts_col is not None:
             try:
                 accounts_col.update_one(
                     {"_id": ObjectId(account_id)},
@@ -678,13 +708,23 @@ class AccountManager:
             return False, str(e)
     
     def get_latest_otp_sync(self, session_string):
-        """Sync wrapper to get latest OTP"""
+        """Sync wrapper to get latest OTP from session"""
         try:
             return self.async_manager.run_async(
                 get_latest_otp_async(session_string, self.api_id, self.api_hash)
             )
         except Exception as e:
             logger.error(f"Error getting latest OTP: {e}")
+            return None
+    
+    def get_otp_from_database_sync(self, session_id, otp_sessions_col):
+        """Sync wrapper to get OTP from database"""
+        try:
+            return self.async_manager.run_async(
+                get_otp_from_database_async(session_id, otp_sessions_col)
+            )
+        except Exception as e:
+            logger.error(f"Error getting OTP from database: {e}")
             return None
     
     def logout_session_sync(self, session_id, user_id, otp_sessions_col, accounts_col, orders_col):
@@ -698,7 +738,7 @@ class AccountManager:
             return False, str(e)
 
 # -----------------------
-# MAIN OTP MONITORING FUNCTION (USED BY BOT)
+# MAIN OTP MONITORING FUNCTION (USED BY BOT) - FIXED
 # -----------------------
 async def continuous_otp_monitor(session_string, user_id, phone, session_id, max_wait_time=1800, 
                                  api_id=6435225, api_hash="4e984ea35f854762dcde906dce426c2d", 
@@ -723,5 +763,6 @@ __all__ = [
     'otp_searcher',
     'continuous_otp_monitor',
     'get_latest_otp_async',
+    'get_otp_from_database_async',
     'logout_session_async'
 ]
