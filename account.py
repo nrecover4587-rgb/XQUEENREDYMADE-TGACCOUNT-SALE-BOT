@@ -1,4 +1,4 @@
-account.py 
+
 """
 Account Management Module for OTP Bot
 Handles Pyrogram login, OTP verification, and session management
