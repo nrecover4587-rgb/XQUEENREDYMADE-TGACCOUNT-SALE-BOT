@@ -2103,6 +2103,10 @@ def process_purchase(user_id, account_id, chat_id, message_id, callback_id):
 @bot.message_handler(func=lambda m: True, content_types=['text','photo','video','document'])
 def chat_handler(msg):
     user_id = msg.from_user.id
+    
+    # ADMIN DEDUCT MUST HAVE PRIORITY
+    if user_id == ADMIN_ID and user_id in admin_deduct_state:
+        pass
 
     # Check if user is banned
     if is_user_banned(user_id):
