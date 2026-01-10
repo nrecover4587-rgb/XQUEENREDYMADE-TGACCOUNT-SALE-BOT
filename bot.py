@@ -27,10 +27,6 @@ MONGO_URL = os.getenv('MONGO_URL', 'mongodb+srv://teamdaxx123:teamdaxx123@cluste
 API_ID = int(os.getenv('API_ID', '30038466'))
 API_HASH = os.getenv('API_HASH', '5a492a0dfb22b1a0b7caacbf90cbf96e')
 
-# IMB Gateway Config
-IMB_API_URL = "https://pay.imb.org.in/api/create-order"
-IMB_CHECK_STATUS_URL = "https://pay.imb.org.in/api/check-order-status"
-IMB_API_TOKEN = ""
 
 # Referral commission percentage
 REFERRAL_COMMISSION = 1.5  # 1.5% per recharge
@@ -392,7 +388,7 @@ def handle_callbacks(call):
         elif data == "support":
             try:
                 bot.edit_message_text(
-                    "🛠️ Support: @anmol144",
+                    "🛠️ Support: @NOBITA_USA_903",
                     call.message.chat.id,
                     call.message.message_id,
                     reply_markup=InlineKeyboardMarkup().add(
@@ -406,7 +402,7 @@ def handle_callbacks(call):
                     pass
                 bot.send_message(
                     call.message.chat.id,
-                    "🛠️ Support: @anmol144",
+                    "🛠️ Support: @NOBITA_USA_903",
                     reply_markup=InlineKeyboardMarkup().add(
                         InlineKeyboardButton("⬅️ Back", callback_data="back_to_menu")
                     )
@@ -704,7 +700,7 @@ def show_main_menu(chat_id):
             user_id,
             "🚫 **Account Banned**\n\n"
             "Your account has been banned from using this bot.\n"
-            "Contact admin @anmol144 for assistance."
+            "Contact admin @NOBITA_USA_903 for assistance."
         )
         return
     
@@ -922,7 +918,8 @@ def handle_logout_session(user_id, session_id, chat_id, callback_id):
                 "✅ **Logged Out Successfully!**\n\n"
                 "You have been logged out from this session.\n"
                 "Order marked as completed.\n\n"
-                "Thank you for using our service! 👋"
+                "Thank you for using our service! 👋\n\n"
+                "GOING MANE PAGE /start"
             )
         else:
             bot.answer_callback_query(callback_id, f"❌ {message}", show_alert=True)
@@ -1493,7 +1490,7 @@ def ask_ban_user(message):
                 user_id_to_ban,
                 "🚫 **Your Account Has Been Banned**\n\n"
                 "You have been banned from using this bot.\n"
-                "Contact admin @anmol144 if you believe this is a mistake."
+                "Contact admin @NOBITA_USA_903 if you believe this is a mistake."
             )
         except:
             pass
@@ -1820,8 +1817,8 @@ def process_recharge_amount_manual(msg):
         caption = f"""<blockquote>💳 <b>Payment Details</b>
 
 💰 Amount: {format_currency(amount)}
-📱 UPI ID: <code>amit.singh903@paytm</code>
-👤 Name: Amit Singh</blockquote>
+📱 UPI ID: <code>YOUR UPI ID</code>
+👤 Name: YOUR UPI NAME</blockquote>
 
 <blockquote>📋 <b>Instructions:</b>
 1. Scan QR code OR send {format_currency(amount)} to above UPI
