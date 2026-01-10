@@ -597,8 +597,10 @@ def handle_callbacks(call):
         elif data == "broadcast_menu":
             if is_admin(user_id):
                 bot.answer_callback_query(call.id, "📢 Send or reply to a message to broadcast")
-                user_stage[user_id] = "broadcasting"  # Fix: Add state for broadcast
-                bot.send_message(call.message.chat.id, "📢 **Send Broadcast Message**\n\nSend or reply to a message to broadcast to all users.")
+                # Clear any existing broadcast state
+                if user_id in user_stage:
+                    del user_stage[user_id]
+                bot.send_message(call.message.chat.id, "📢 **Send Broadcast Message**\n\nSend or reply to a message to broadcast to all users.\n\n*After sending broadcast, you need to click broadcast button again for next broadcast*")
             else:
                 bot.answer_callback_query(call.id, "❌ Unauthorized", show_alert=True)
         
@@ -1591,19 +1593,22 @@ def show_user_ranking(chat_id):
 @bot.message_handler(func=lambda msg: is_admin(msg.from_user.id))
 def handle_broadcast_reply(msg):
     """Handle broadcast when admin replies to a message or sends /broadcast"""
-    # Check if it's a /broadcast command
-    if msg.text and msg.text.strip().lower() == "/broadcast":
-        bot.send_message(msg.chat.id, "📢 **Send Broadcast**\n\nSend or reply to a message to broadcast to all users.")
-        return
-    
-    # Check if it's a reply to broadcast instruction
+    # Check if it's a reply to broadcast instruction message
     if msg.reply_to_message:
         replied_text = msg.reply_to_message.text or ""
         if "broadcast" in replied_text.lower() or "📢" in replied_text or "📢 send broadcast" in replied_text.lower():
             process_broadcast_now(msg)
-    # Also handle if admin directly sends any content (text, photo, etc.) after clicking broadcast button
-    elif user_stage.get(msg.from_user.id) == "broadcasting":
+            # Clear broadcast state after processing
+            if msg.from_user.id in user_stage:
+                del user_stage[msg.from_user.id]
+            return
+    
+    # Check if admin clicked broadcast button and then sent a message
+    if msg.from_user.id in user_stage and user_stage[msg.from_user.id] == "broadcasting":
         process_broadcast_now(msg)
+        # Clear broadcast state after processing
+        del user_stage[msg.from_user.id]
+        return
 
 def process_broadcast_now(msg):
     """Process broadcast immediately"""
@@ -2177,6 +2182,7 @@ def chat_handler(msg):
                 }
                 
                 bot.send_message(ADMIN_ID, "📝 Enter reason for balance deduction:")
+                return
             
             except ValueError:
                 bot.send_message(ADMIN_ID, "❌ Invalid amount. Please enter numeric value only:")
@@ -2243,6 +2249,7 @@ def chat_handler(msg):
                 
                 # Cleanup state
                 del admin_deduct_state[user_id]
+                return
             
             except Exception as e:
                 logger.exception("Error in balance deduction:")
@@ -2250,26 +2257,14 @@ def chat_handler(msg):
                 del admin_deduct_state[user_id]
                 return
     
-    # Broadcast command - now handled in handle_broadcast_reply function
-    
-    # Clean broadcast state if any
-    if user_id == ADMIN_ID and user_stage.get(user_id) == "broadcasting" and not is_broadcast_message(msg):
-        del user_stage[user_id]
+    # Check if it's a normal message from admin (not part of any flow)
+    if user_id == ADMIN_ID and msg.text and msg.text.strip().lower() == "/broadcast":
+        bot.send_message(ADMIN_ID, "📢 **Send Broadcast**\n\nSend or reply to a message to broadcast to all users.")
+        return
     
     # Default response for other messages
-    bot.send_message(user_id, "⚠️ Please use /start to begin or press buttons from the menu.")
-
-def is_broadcast_message(msg):
-    """Check if message is part of broadcast flow"""
-    if msg.text and msg.text.strip().lower() == "/broadcast":
-        return True
-    if user_stage.get(msg.from_user.id) == "broadcasting":
-        return True
-    if msg.reply_to_message:
-        replied_text = msg.reply_to_message.text or ""
-        if "broadcast" in replied_text.lower() or "📢" in replied_text:
-            return True
-    return False
+    if msg.chat.type == 'private':
+        bot.send_message(user_id, "⚠️ Please use /start to begin or press buttons from the menu.")
 
 # -----------------------
 # RUN BOT
