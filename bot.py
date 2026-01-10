@@ -597,6 +597,7 @@ def handle_callbacks(call):
         elif data == "broadcast_menu":
             if is_admin(user_id):
                 bot.answer_callback_query(call.id, "📢 Send or reply to a message to broadcast")
+                user_stage[user_id] = "broadcasting"  # Fix: Add state for broadcast
                 bot.send_message(call.message.chat.id, "📢 **Send Broadcast Message**\n\nSend or reply to a message to broadcast to all users.")
             else:
                 bot.answer_callback_query(call.id, "❌ Unauthorized", show_alert=True)
@@ -1585,17 +1586,23 @@ def show_user_ranking(chat_id):
         bot.send_message(chat_id, f"❌ Error generating ranking: {str(e)}")
 
 # -----------------------
-# BROADCAST FUNCTION
+# BROADCAST FUNCTION - FIXED
 # -----------------------
-@bot.message_handler(func=lambda msg: is_admin(msg.from_user.id) and msg.reply_to_message)
+@bot.message_handler(func=lambda msg: is_admin(msg.from_user.id))
 def handle_broadcast_reply(msg):
-    """Handle broadcast when admin replies to a message"""
-    if not msg.reply_to_message:
+    """Handle broadcast when admin replies to a message or sends /broadcast"""
+    # Check if it's a /broadcast command
+    if msg.text and msg.text.strip().lower() == "/broadcast":
+        bot.send_message(msg.chat.id, "📢 **Send Broadcast**\n\nSend or reply to a message to broadcast to all users.")
         return
     
-    # Check if the replied message is about broadcasting
-    replied_text = msg.reply_to_message.text or ""
-    if "broadcast" in replied_text.lower() or "📢" in replied_text:
+    # Check if it's a reply to broadcast instruction
+    if msg.reply_to_message:
+        replied_text = msg.reply_to_message.text or ""
+        if "broadcast" in replied_text.lower() or "📢" in replied_text or "📢 send broadcast" in replied_text.lower():
+            process_broadcast_now(msg)
+    # Also handle if admin directly sends any content (text, photo, etc.) after clicking broadcast button
+    elif user_stage.get(msg.from_user.id) == "broadcasting":
         process_broadcast_now(msg)
 
 def process_broadcast_now(msg):
@@ -2097,7 +2104,7 @@ def process_purchase(user_id, account_id, chat_id, message_id, callback_id):
             pass
 
 # -----------------------
-# MESSAGE HANDLER FOR ADMIN DEDUCT AND OTHER STATES
+# MESSAGE HANDLER FOR ADMIN DEDUCT AND OTHER STATES - FIXED
 # -----------------------
 @bot.message_handler(func=lambda m: True, content_types=['text','photo','video','document'])
 def chat_handler(msg):
@@ -2109,7 +2116,7 @@ def chat_handler(msg):
     
     ensure_user_exists(user_id, msg.from_user.first_name or "Unknown", msg.from_user.username)
     
-    # ADMIN DEDUCT PROCESS HANDLER
+    # ADMIN DEDUCT PROCESS HANDLER - FIXED
     if user_id == ADMIN_ID and user_id in admin_deduct_state:
         # Check which step admin is on
         state = admin_deduct_state[user_id]
@@ -2243,12 +2250,26 @@ def chat_handler(msg):
                 del admin_deduct_state[user_id]
                 return
     
-    # Broadcast command
-    if user_id == ADMIN_ID and msg.text and msg.text.strip().lower() == "/broadcast":
-        bot.send_message(msg.chat.id, "📢 **Send Broadcast**\n\nSend or reply to a message to broadcast to all users.")
-        return
+    # Broadcast command - now handled in handle_broadcast_reply function
     
+    # Clean broadcast state if any
+    if user_id == ADMIN_ID and user_stage.get(user_id) == "broadcasting" and not is_broadcast_message(msg):
+        del user_stage[user_id]
+    
+    # Default response for other messages
     bot.send_message(user_id, "⚠️ Please use /start to begin or press buttons from the menu.")
+
+def is_broadcast_message(msg):
+    """Check if message is part of broadcast flow"""
+    if msg.text and msg.text.strip().lower() == "/broadcast":
+        return True
+    if user_stage.get(msg.from_user.id) == "broadcasting":
+        return True
+    if msg.reply_to_message:
+        replied_text = msg.reply_to_message.text or ""
+        if "broadcast" in replied_text.lower() or "📢" in replied_text:
+            return True
+    return False
 
 # -----------------------
 # RUN BOT
