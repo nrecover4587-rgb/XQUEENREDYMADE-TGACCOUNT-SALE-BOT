@@ -80,6 +80,7 @@ whatsapp_number_timers = {}
 payment_orders = {}
 admin_deduct_state = {}
 referral_data = {}
+broadcast_data = {}  # For broadcast state
 
 # Pyrogram login states
 login_states = {}  # Format: {user_id: {"step": "phone", "client": client_obj, ...}}
@@ -593,10 +594,13 @@ def handle_callbacks(call):
         elif data == "out_of_stock":
             bot.answer_callback_query(call.id, "❌ Out of Stock! No accounts available.", show_alert=True)
         
-        # ADMIN FEATURES
+        # ADMIN FEATURES - BROADCAST FIXED
         elif data == "broadcast_menu":
             if is_admin(user_id):
-                bot.answer_callback_query(call.id, "📢 Reply to a message (or send one) to broadcast to all users. Then send /sendbroadcast")
+                bot.answer_callback_query(call.id, "📢 Send or reply to a message to broadcast")
+                # Set broadcast state
+                broadcast_data[user_id] = {"step": "waiting_broadcast"}
+                bot.send_message(call.message.chat.id, "📢 **Send Broadcast Message**\n\nSend or reply to a message to broadcast to all users.")
             else:
                 bot.answer_callback_query(call.id, "❌ Unauthorized", show_alert=True)
         
@@ -627,7 +631,10 @@ def handle_callbacks(call):
             if is_admin(user_id):
                 bot.answer_callback_query(call.id, "Processing...")
                 admin_deduct_state[user_id] = {"step": "ask_user_id"}
-                bot.send_message(call.message.chat.id, "👤 Enter User ID whose balance you want to deduct:")
+                msg = bot.send_message(call.message.chat.id, "👤 Enter User ID whose balance you want to deduct:")
+                # Clear any previous broadcast state
+                if user_id in broadcast_data:
+                    del broadcast_data[user_id]
             else:
                 bot.answer_callback_query(call.id, "❌ Unauthorized", show_alert=True)
         
@@ -1586,10 +1593,20 @@ def show_user_ranking(chat_id):
 # -----------------------
 # BROADCAST FUNCTION - FIXED
 # -----------------------
-def process_broadcast(msg):
-    """Process broadcast when admin sends /sendbroadcast command"""
-    if msg.from_user.id != ADMIN_ID:
-        bot.send_message(msg.chat.id, "❌ Unauthorized.")
+@bot.message_handler(func=lambda msg: is_admin(msg.from_user.id) and msg.reply_to_message)
+def handle_broadcast_reply(msg):
+    """Handle broadcast when admin replies to a message"""
+    if not msg.reply_to_message:
+        return
+    
+    # Check if the replied message is about broadcasting
+    replied_text = msg.reply_to_message.text or ""
+    if "broadcast" in replied_text.lower() or "📢" in replied_text or "📢 send broadcast" in replied_text.lower():
+        process_broadcast_now(msg)
+
+def process_broadcast_now(msg):
+    """Process broadcast immediately"""
+    if not is_admin(msg.from_user.id):
         return
     
     source = msg.reply_to_message if msg.reply_to_message else msg
@@ -1598,7 +1615,7 @@ def process_broadcast(msg):
     is_video = getattr(source, "video", None) is not None
     is_document = getattr(source, "document", None) is not None
     
-    bot.send_message(ADMIN_ID, "📡 Broadcasting started... Please wait.")
+    bot.send_message(msg.chat.id, "📡 Broadcasting started... Please wait.")
     threading.Thread(target=broadcast_thread, args=(source, text, is_photo, is_video, is_document)).start()
 
 def broadcast_thread(source_msg, text, is_photo, is_video, is_document):
@@ -1629,7 +1646,7 @@ def broadcast_thread(source_msg, text, is_photo, is_video, is_document):
                     bot.send_message(ADMIN_ID, f"✅ Sent {sent}/{total} users...")
                 except Exception:
                     pass
-            time.sleep(0.06)
+            time.sleep(0.1)
         
         except Exception as e:
             failed += 1
@@ -2089,7 +2106,7 @@ def process_purchase(user_id, account_id, chat_id, message_id, callback_id):
             pass
 
 # -----------------------
-# MESSAGE HANDLER FOR ADMIN DEDUCT AND OTHER STATES - FIXED
+# MESSAGE HANDLER FOR ADMIN DEDUCT AND BROADCAST - COMPLETELY FIXED
 # -----------------------
 @bot.message_handler(func=lambda m: True, content_types=['text','photo','video','document'])
 def chat_handler(msg):
@@ -2101,7 +2118,7 @@ def chat_handler(msg):
     
     ensure_user_exists(user_id, msg.from_user.first_name or "Unknown", msg.from_user.username)
     
-    # ADMIN DEDUCT PROCESS HANDLER - FIXED (from second code)
+    # ADMIN DEDUCT PROCESS HANDLER - COMPLETELY FIXED
     if user_id == ADMIN_ID and user_id in admin_deduct_state:
         # Check which step admin is on
         state = admin_deduct_state[user_id]
@@ -2131,10 +2148,12 @@ def chat_handler(msg):
                     f"💰 Current Balance: {format_currency(current_balance)}\n\n"
                     f"💸 Enter amount to deduct (max {format_currency(current_balance)}):"
                 )
+                return
+            
             except ValueError:
                 bot.send_message(ADMIN_ID, "❌ Invalid User ID. Please enter numeric ID only:")
-            return
-            
+                return
+        
         elif state["step"] == "ask_amount":
             try:
                 amount = float(msg.text.strip())
@@ -2158,10 +2177,12 @@ def chat_handler(msg):
                 }
                 
                 bot.send_message(ADMIN_ID, "📝 Enter reason for balance deduction:")
+                return
+            
             except ValueError:
                 bot.send_message(ADMIN_ID, "❌ Invalid amount. Please enter numeric value only:")
-            return
-            
+                return
+        
         elif state["step"] == "ask_reason":
             reason = msg.text.strip()
             target_user_id = admin_deduct_state[user_id]["target_user_id"]
@@ -2226,22 +2247,41 @@ def chat_handler(msg):
                 
                 # Cleanup state
                 del admin_deduct_state[user_id]
-                
+                return
+            
             except Exception as e:
                 logger.exception("Error in balance deduction:")
                 bot.send_message(ADMIN_ID, f"❌ Error deducting balance: {str(e)}")
                 del admin_deduct_state[user_id]
-            return
+                return
     
-    # Original admin commands
-    if user_id == ADMIN_ID:
-        if msg.text and msg.text.strip().lower() == "/sendbroadcast":
-            process_broadcast(msg)
+    # BROADCAST HANDLER - COMPLETELY FIXED
+    if user_id == ADMIN_ID and user_id in broadcast_data and broadcast_data[user_id]["step"] == "waiting_broadcast":
+        # Process broadcast immediately
+        text = getattr(msg, "text", None) or getattr(msg, "caption", "") or ""
+        is_photo = bool(getattr(msg, "photo", None))
+        is_video = getattr(msg, "video", None) is not None
+        is_document = getattr(msg, "document", None) is not None
+        
+        bot.send_message(ADMIN_ID, "📡 Broadcasting started... Please wait.")
+        threading.Thread(target=broadcast_thread, args=(msg, text, is_photo, is_video, is_document)).start()
+        
+        # Clear broadcast state after starting
+        del broadcast_data[user_id]
         return
     
-    # Check if it's a normal message from admin (not part of any flow)
+    # Admin broadcast command
     if user_id == ADMIN_ID and msg.text and msg.text.strip().lower() == "/broadcast":
         bot.send_message(ADMIN_ID, "📢 **Send Broadcast**\n\nSend or reply to a message to broadcast to all users.")
+        return
+    
+    # Admin sendbroadcast command
+    if user_id == ADMIN_ID and msg.text and msg.text.strip().lower() == "/sendbroadcast":
+        # Check if it's a reply to a message
+        if msg.reply_to_message:
+            process_broadcast_now(msg)
+        else:
+            bot.send_message(ADMIN_ID, "❌ Please reply to a message to broadcast.")
         return
     
     # Default response for other messages
