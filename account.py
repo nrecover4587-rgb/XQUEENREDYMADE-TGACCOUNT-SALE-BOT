@@ -39,12 +39,11 @@ class AsyncManager:
     """Manages async operations in sync context"""
     def __init__(self):
         self.lock = threading.Lock()
-        
+    
     def run_async(self, coro):
         """Run async coroutine from sync context"""
         try:
             loop = get_event_loop()
-            
             # Check if we're in the event loop thread
             if loop.is_running():
                 # Run in a new thread with its own event loop
@@ -52,7 +51,6 @@ class AsyncManager:
             else:
                 # Run in current event loop
                 return loop.run_until_complete(coro)
-                
         except Exception as e:
             logger.error(f"Async operation failed: {e}")
             raise
@@ -91,12 +89,12 @@ class PyrogramClientManager:
         self.api_id = api_id
         self.api_hash = api_hash
         self.lock = threading.Lock()
-        
+    
     async def create_client(self, session_string=None, name=None):
         """Create a Pyrogram client with proper settings"""
         if name is None:
             name = f"client_{int(time.time())}"
-            
+        
         # Create client with settings to avoid ping issues
         client = Client(
             name=name,
@@ -106,9 +104,8 @@ class PyrogramClientManager:
             in_memory=True,
             no_updates=True,  # Disable updates
             takeout=False,    # Disable takeout
-            sleep_threshold=0  # Disable automatic sleeping
+            sleep_threshold=0 # Disable automatic sleeping
         )
-        
         return client
     
     async def send_code(self, client, phone_number):
@@ -204,7 +201,6 @@ async def pyrogram_login_flow_async(login_states, accounts_col, user_id, phone_n
             return False, "Session expired"
         
         manager = PyrogramClientManager(api_id, api_hash)
-        
         # Create client
         client = await manager.create_client()
         
@@ -227,7 +223,7 @@ async def pyrogram_login_flow_async(login_states, accounts_col, user_id, phone_n
         else:
             await manager.safe_disconnect(client)
             return False, error or "Failed to send OTP"
-            
+    
     except Exception as e:
         logger.error(f"Pyrogram login error: {e}")
         return False, str(e)
@@ -239,7 +235,6 @@ async def verify_otp_and_save_async(login_states, accounts_col, user_id, otp_cod
             return False, "Session expired"
         
         state = login_states[user_id]
-        
         if "client" not in state:
             return False, "Client not found"
         
@@ -250,10 +245,7 @@ async def verify_otp_and_save_async(login_states, accounts_col, user_id, otp_cod
         
         # Try to sign in with OTP
         success, status, error = await manager.sign_in_with_otp(
-            client,
-            state["phone"],
-            state["phone_code_hash"],
-            otp_code
+            client, state["phone"], state["phone_code_hash"], otp_code
         )
         
         if status == "password_required":
@@ -268,7 +260,6 @@ async def verify_otp_and_save_async(login_states, accounts_col, user_id, otp_cod
         
         # Get session string
         session_string = await manager.get_session_string(client)
-        
         if not session_string:
             await manager.safe_disconnect(client)
             login_states.pop(user_id, None)
@@ -299,9 +290,8 @@ async def verify_otp_and_save_async(login_states, accounts_col, user_id, otp_cod
         # Cleanup
         await manager.safe_disconnect(client)
         login_states.pop(user_id, None)
-        
         return True, "Account added successfully"
-            
+    
     except Exception as e:
         logger.error(f"OTP verification error: {e}")
         if user_id in login_states and "client" in login_states[user_id]:
@@ -317,7 +307,6 @@ async def verify_2fa_password_async(login_states, accounts_col, user_id, passwor
             return False, "Session expired"
         
         state = login_states[user_id]
-        
         if "client" not in state:
             return False, "Client not found"
         
@@ -328,14 +317,12 @@ async def verify_2fa_password_async(login_states, accounts_col, user_id, passwor
         
         # Check password
         success, error = await manager.sign_in_with_password(client, password)
-        
         if not success:
             await manager.safe_disconnect(client)
             return False, error
         
         # Get session string
         session_string = await manager.get_session_string(client)
-        
         if not session_string:
             await manager.safe_disconnect(client)
             login_states.pop(user_id, None)
@@ -366,9 +353,8 @@ async def verify_2fa_password_async(login_states, accounts_col, user_id, passwor
         # Cleanup
         await manager.safe_disconnect(client)
         login_states.pop(user_id, None)
-        
         return True, "Account added successfully"
-            
+    
     except Exception as e:
         logger.error(f"2FA verification error: {e}")
         if user_id in login_states and "client" in login_states[user_id]:
@@ -396,7 +382,6 @@ async def otp_searcher(session_string, api_id=6435225, api_hash="4e984ea35f85476
         )
         
         await client.connect()
-        
         latest_otp = None
         otp_time = None
         message_count = 0
@@ -405,12 +390,10 @@ async def otp_searcher(session_string, api_id=6435225, api_hash="4e984ea35f85476
             # Get last 30 messages from "Telegram" chat
             async for message in client.get_chat_history("Telegram", limit=30):
                 message_count += 1
-                
                 if message.text and any(keyword in message.text.lower() for keyword in ["code", "login", "verification", "رمز", "تأكيد"]):
                     # Pattern for OTP codes
                     pattern = r'\b\d{5}\b'  # 5 digit codes
                     matches = re.findall(pattern, message.text)
-                    
                     for match in matches:
                         # Check if this is newer than previous OTP
                         if message.date:
@@ -419,8 +402,7 @@ async def otp_searcher(session_string, api_id=6435225, api_hash="4e984ea35f85476
                                 otp_time = current_time
                                 latest_otp = match
                                 logger.info(f"Found OTP in message: {match} at {message.date}")
-                                break  # First match is enough
-                    
+                        break  # First match is enough
                     if latest_otp:
                         break  # Found OTP, no need to continue
             
@@ -430,7 +412,6 @@ async def otp_searcher(session_string, api_id=6435225, api_hash="4e984ea35f85476
                     if message.text and any(keyword in message.text.lower() for keyword in ["code", "login", "verification"]):
                         pattern = r'\b\d{5}\b'
                         matches = re.findall(pattern, message.text)
-                        
                         for match in matches:
                             if message.date:
                                 current_time = message.date.timestamp()
@@ -438,10 +419,9 @@ async def otp_searcher(session_string, api_id=6435225, api_hash="4e984ea35f85476
                                     otp_time = current_time
                                     latest_otp = match
                                     logger.info(f"Found OTP from 777000: {match} at {message.date}")
-                                    break
-                    
-                    if latest_otp:
-                        break
+                            break
+                        if latest_otp:
+                            break
         
         except Exception as e:
             logger.error(f"Error searching OTP in chat: {e}")
@@ -455,7 +435,7 @@ async def otp_searcher(session_string, api_id=6435225, api_hash="4e984ea35f85476
         
         logger.info(f"OTP search completed. Messages checked: {message_count}, Found OTP: {latest_otp}")
         return latest_otp  # Return single latest OTP
-        
+    
     except Exception as e:
         logger.error(f"OTP searcher error: {e}")
         if client:
@@ -518,134 +498,32 @@ async def logout_session_async(session_id, user_id, otp_sessions_col, accounts_c
                 )
             except:
                 pass
-
-            # 🔥 REAL TELEGRAM LOGOUT (CPython / Telegram X remove)
-            try:
-                account = accounts_col.find_one({"_id": ObjectId(account_id)})
-                if account and account.get("session_string"):
-                    tg_client = Client(
-                        name=f"logout_{session_id}",
-                        session_string=account["session_string"],
-                        api_id=int(account.get("api_id", 6435225)),
-                        api_hash=account.get("api_hash", "4e984ea35f854762dcde906dce426c2d"),
-                        in_memory=True,
-                        no_updates=True
-                    )
-
-                    await tg_client.connect()
-                    await tg_client.log_out()      # ✅ REAL LOGOUT
-                    await tg_client.disconnect()
-
-                    logger.info(f"Telegram account FORCE logged out for {account.get('phone')}")
-            except Exception as e:
-                logger.error(f"Telegram logout failed: {e}")
+        
+        # 🔥 REAL TELEGRAM LOGOUT (CPython / Telegram X remove)
+        try:
+            account = accounts_col.find_one({"_id": ObjectId(account_id)})
+            if account and account.get("session_string"):
+                tg_client = Client(
+                    name=f"logout_{session_id}",
+                    session_string=account["session_string"],
+                    api_id=int(account.get("api_id", 6435225)),
+                    api_hash=account.get("api_hash", "4e984ea35f854762dcde906dce426c2d"),
+                    in_memory=True,
+                    no_updates=True
+                )
+                await tg_client.connect()
+                await tg_client.log_out()  # ✅ REAL LOGOUT
+                await tg_client.disconnect()
+                logger.info(f"Telegram account FORCE logged out for {account.get('phone')}")
+        except Exception as e:
+            logger.error(f"Telegram logout failed: {e}")
         
         logger.info(f"User {user_id} logged out from session {session_id}")
         return True, "Logged out successfully from Telegram"
-        
+    
     except Exception as e:
         logger.error(f"Logout error: {e}")
         return False, str(e)
-
-# -----------------------
-# REAL-TIME OTP MONITORING FUNCTION (FIXED)
-# -----------------------
-async def real_time_otp_monitor(session_string, user_id, phone, session_id, max_wait_time=1800, 
-                                api_id=6435225, api_hash="4e984ea35f854762dcde906dce426c2d", 
-                                bot=None, otp_sessions_col=None, accounts_col=None):
-    """Real-time OTP monitoring - finds LATEST OTP and updates database"""
-    start_time = time.time()
-    last_otp = None
-    
-    logger.info(f"Real-time OTP monitoring started for {phone}, session {session_id}")
-    
-    # Main monitoring loop
-    while time.time() - start_time < max_wait_time:
-        try:
-            # FIXED: Check if otp_sessions_col is not None using proper comparison
-            if otp_sessions_col is not None:
-                session_data = otp_sessions_col.find_one({"session_id": session_id})
-                if not session_data or session_data.get("status") == "completed":
-                    logger.info(f"OTP monitoring stopped for {phone} - session completed")
-                    break
-            
-            # Find LATEST OTP
-            current_otp = await otp_searcher(session_string, api_id, api_hash)
-            
-            # If found new OTP, update database and notify user
-            if current_otp and current_otp != last_otp:
-                logger.info(f"New OTP found for {phone}: {current_otp}")
-                last_otp = current_otp
-                
-                # FIXED: Save to database only if otp_sessions_col is not None
-                if otp_sessions_col is not None:
-                    otp_sessions_col.update_one(
-                        {"session_id": session_id},
-                        {"$set": {
-                            "otp_code": current_otp,
-                            "latest_otp_at": datetime.utcnow(),
-                            "total_otps_received": 1 if not last_otp else 2,
-                            "status": "active"
-                        }},
-                        upsert=True
-                    )
-                    logger.info(f"OTP saved to database: {current_otp}")
-                
-                # Notify user (only if bot is available)
-                if bot:
-                    try:
-                        # Get account info for 2FA password
-                        two_step_password = ""
-                        if session_data and session_data.get("account_id") and accounts_col is not None:
-                            try:
-                                from bson import ObjectId
-                                account = accounts_col.find_one({"_id": ObjectId(session_data.get("account_id"))})
-                                if account:
-                                    two_step_password = account.get("two_step_password", "")
-                            except:
-                                pass
-                        
-                        # Create message
-                        from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-                        
-                        message_text = f"✅ **NEW OTP RECEIVED!**\n\n"
-                        message_text += f"📱 Phone: `{phone}`\n"
-                        message_text += f"🔢 OTP Code: `{current_otp}`\n"
-                        
-                        if two_step_password:
-                            message_text += f"🔐 2FA Password: `{two_step_password}`\n"
-                        
-                        message_text += f"\n⏰ Time: {datetime.utcnow().strftime('%H:%M:%S')}\n"
-                        message_text += f"\nEnter this code in Telegram X app."
-                        
-                        # Create buttons
-                        markup = InlineKeyboardMarkup(row_width=2)
-                        markup.add(
-                            InlineKeyboardButton("🔄 Get Latest OTP", callback_data=f"get_otp_{session_id}"),
-                            InlineKeyboardButton("🚪 Logout Session", callback_data=f"logout_session_{session_id}")
-                        )
-                        
-                        # Send message
-                        bot.send_message(
-                            user_id,
-                            message_text,
-                            parse_mode="Markdown",
-                            reply_markup=markup
-                        )
-                        logger.info(f"OTP notification sent to user {user_id}")
-                        
-                    except Exception as e:
-                        logger.error(f"Failed to send OTP notification: {e}")
-            
-            # Wait before next check
-            await asyncio.sleep(5)  # Check every 5 seconds
-            
-        except Exception as e:
-            logger.error(f"OTP monitor error: {e}")
-            await asyncio.sleep(5)
-    
-    logger.info(f"OTP monitoring ended for {phone}")
-    return last_otp
 
 # -----------------------
 # GET LATEST OTP FUNCTION
@@ -672,7 +550,6 @@ async def get_otp_from_database_async(session_id, otp_sessions_col):
         
         # Directly fetch from database
         session_data = otp_sessions_col.find_one({"session_id": session_id})
-        
         if session_data and session_data.get("otp_code"):
             otp_code = session_data.get("otp_code")
             logger.info(f"OTP fetched from database for session {session_id}: {otp_code}")
@@ -680,7 +557,6 @@ async def get_otp_from_database_async(session_id, otp_sessions_col):
         else:
             logger.warning(f"No OTP found in database for session {session_id}")
             return None
-            
     except Exception as e:
         logger.error(f"Error getting OTP from database: {e}")
         return None
@@ -693,12 +569,10 @@ async def simple_otp_monitor(session_string, session_id, max_wait_time=1800, api
     start_time = time.time()
     
     logger.info(f"Simple OTP monitoring started for session {session_id}")
-    
     while time.time() - start_time < max_wait_time:
         try:
             # Just keep the session alive, don't search for OTP automatically
             await asyncio.sleep(10)
-            
         except Exception as e:
             logger.error(f"Simple monitor error: {e}")
             await asyncio.sleep(10)
@@ -722,8 +596,7 @@ class AccountManager:
         try:
             return self.async_manager.run_async(
                 pyrogram_login_flow_async(
-                    login_states, accounts_col, user_id, phone_number, 
-                    chat_id, message_id, country, self.api_id, self.api_hash
+                    login_states, accounts_col, user_id, phone_number, chat_id, message_id, country, self.api_id, self.api_hash
                 )
             )
         except Exception as e:
@@ -791,30 +664,13 @@ class AccountManager:
             return None
 
 # -----------------------
-# MAIN OTP MONITORING FUNCTION (USED BY BOT) - FIXED
+# EXPORT EVERYTHING
 # -----------------------
-async def continuous_otp_monitor(session_string, user_id, phone, session_id, max_wait_time=1800, 
-                                 api_id=6435225, api_hash="4e984ea35f854762dcde906dce426c2d", 
-                                 bot=None, otp_sessions_col=None, accounts_col=None):
-    """Main OTP monitoring function called by bot - MODIFIED: NO AUTOMATIC NOTIFICATIONS"""
-    try:
-        # Use simple monitoring instead of real-time monitoring
-        last_otp = await simple_otp_monitor(
-            session_string, session_id, max_wait_time,
-            api_id, api_hash
-        )
-        return [last_otp] if last_otp else []
-    except Exception as e:
-        logger.error(f"Continuous OTP monitor error: {e}")
-        return []
-
-# Export everything
 __all__ = [
     'AsyncManager',
     'PyrogramClientManager',
     'AccountManager',
     'otp_searcher',
-    'continuous_otp_monitor',
     'get_latest_otp_async',
     'get_otp_from_database_async',
     'logout_session_async',
