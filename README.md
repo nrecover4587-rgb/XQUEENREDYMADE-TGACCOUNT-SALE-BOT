@@ -25,3 +25,23 @@ Telegram OTP Bot with:
 ```bash
 git clone https://github.com/yourusername/otp-bot.git
 cd otp-bot
+# 🤖 OTP Bot – VPS Run Guide
+
+Follow commands **one by one** (copy & paste).
+
+---
+
+## 1️⃣ Clone Repository
+```bash
+
+git clone https://github.com/yourusername/otp-bot.git
+
+cd otp-bot
+
+pip3 install -r requirements.txt
+
+tmux
+
+bash start.sh
+
+CTRL + B  then  D
