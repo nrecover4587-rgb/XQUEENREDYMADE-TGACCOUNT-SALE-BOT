@@ -597,10 +597,8 @@ def handle_callbacks(call):
         # ADMIN FEATURES - BROADCAST FIXED
         elif data == "broadcast_menu":
             if is_admin(user_id):
-                bot.answer_callback_query(call.id, "📢 Send or reply to a message to broadcast")
-                # Set broadcast state
-                broadcast_data[user_id] = {"step": "waiting_broadcast"}
-                bot.send_message(call.message.chat.id, "📢 **Send Broadcast Message**\n\nSend or reply to a message to broadcast to all users.")
+                bot.answer_callback_query(call.id, "📢 Reply any photo / document / video / text with /sendbroadcast")
+                bot.send_message(call.message.chat.id, "📢 **Broadcast Instructions**\n\nReply to any message (photo / document / video / text) with /sendbroadcast")
             else:
                 bot.answer_callback_query(call.id, "❌ Unauthorized", show_alert=True)
         
@@ -1593,23 +1591,18 @@ def show_user_ranking(chat_id):
 # -----------------------
 # BROADCAST FUNCTION - FIXED
 # -----------------------
-@bot.message_handler(func=lambda msg: is_admin(msg.from_user.id) and msg.reply_to_message)
-def handle_broadcast_reply(msg):
-    """Handle broadcast when admin replies to a message"""
-    if not msg.reply_to_message:
-        return
-    
-    # Check if the replied message is about broadcasting
-    replied_text = msg.reply_to_message.text or ""
-    if "broadcast" in replied_text.lower() or "📢" in replied_text or "📢 send broadcast" in replied_text.lower():
-        process_broadcast_now(msg)
-
-def process_broadcast_now(msg):
-    """Process broadcast immediately"""
+@bot.message_handler(commands=['sendbroadcast'])
+def handle_sendbroadcast_command(msg):
+    """Handle /sendbroadcast command"""
     if not is_admin(msg.from_user.id):
+        bot.send_message(msg.chat.id, "❌ Unauthorized access")
         return
     
-    source = msg.reply_to_message if msg.reply_to_message else msg
+    if not msg.reply_to_message:
+        bot.send_message(msg.chat.id, "❌ Please reply to a message (text/photo/video/document) with /sendbroadcast")
+        return
+    
+    source = msg.reply_to_message
     text = getattr(source, "text", None) or getattr(source, "caption", "") or ""
     is_photo = bool(getattr(source, "photo", None))
     is_video = getattr(source, "video", None) is not None
@@ -2118,6 +2111,10 @@ def chat_handler(msg):
     
     ensure_user_exists(user_id, msg.from_user.first_name or "Unknown", msg.from_user.username)
     
+    # Skip broadcast command handling here since it's handled separately
+    if msg.text and msg.text.startswith('/'):
+        return
+    
     # ADMIN DEDUCT PROCESS HANDLER - COMPLETELY FIXED
     if user_id == ADMIN_ID and user_id in admin_deduct_state:
         # Check which step admin is on
@@ -2254,35 +2251,6 @@ def chat_handler(msg):
                 bot.send_message(ADMIN_ID, f"❌ Error deducting balance: {str(e)}")
                 del admin_deduct_state[user_id]
                 return
-    
-    # BROADCAST HANDLER - COMPLETELY FIXED
-    if user_id == ADMIN_ID and user_id in broadcast_data and broadcast_data[user_id]["step"] == "waiting_broadcast":
-        # Process broadcast immediately
-        text = getattr(msg, "text", None) or getattr(msg, "caption", "") or ""
-        is_photo = bool(getattr(msg, "photo", None))
-        is_video = getattr(msg, "video", None) is not None
-        is_document = getattr(msg, "document", None) is not None
-        
-        bot.send_message(ADMIN_ID, "📡 Broadcasting started... Please wait.")
-        threading.Thread(target=broadcast_thread, args=(msg, text, is_photo, is_video, is_document)).start()
-        
-        # Clear broadcast state after starting
-        del broadcast_data[user_id]
-        return
-    
-    # Admin broadcast command
-    if user_id == ADMIN_ID and msg.text and msg.text.strip().lower() == "/broadcast":
-        bot.send_message(ADMIN_ID, "📢 **Send Broadcast**\n\nSend or reply to a message to broadcast to all users.")
-        return
-    
-    # Admin sendbroadcast command
-    if user_id == ADMIN_ID and msg.text and msg.text.strip().lower() == "/sendbroadcast":
-        # Check if it's a reply to a message
-        if msg.reply_to_message:
-            process_broadcast_now(msg)
-        else:
-            bot.send_message(ADMIN_ID, "❌ Please reply to a message to broadcast.")
-        return
     
     # Default response for other messages
     if msg.chat.type == 'private':
