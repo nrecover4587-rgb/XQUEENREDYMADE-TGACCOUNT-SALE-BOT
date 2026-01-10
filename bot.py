@@ -596,11 +596,7 @@ def handle_callbacks(call):
         # ADMIN FEATURES
         elif data == "broadcast_menu":
             if is_admin(user_id):
-                bot.answer_callback_query(call.id, "📢 Send or reply to a message to broadcast")
-                # Clear any existing broadcast state
-                if user_id in user_stage:
-                    del user_stage[user_id]
-                bot.send_message(call.message.chat.id, "📢 **Send Broadcast Message**\n\nSend or reply to a message to broadcast to all users.\n\n*After sending broadcast, you need to click broadcast button again for next broadcast*")
+                bot.answer_callback_query(call.id, "📢 Reply to a message (or send one) to broadcast to all users. Then send /sendbroadcast")
             else:
                 bot.answer_callback_query(call.id, "❌ Unauthorized", show_alert=True)
         
@@ -1590,35 +1586,19 @@ def show_user_ranking(chat_id):
 # -----------------------
 # BROADCAST FUNCTION - FIXED
 # -----------------------
-@bot.message_handler(func=lambda msg: is_admin(msg.from_user.id))
-def handle_broadcast_reply(msg):
-    """Handle broadcast when admin replies to a message or sends /broadcast"""
-    # Check if it's a reply to broadcast instruction message
-    if msg.reply_to_message:
-        replied_text = msg.reply_to_message.text or ""
-        if "broadcast" in replied_text.lower() or "📢" in replied_text or "📢 send broadcast" in replied_text.lower():
-            process_broadcast_now(msg)
-            # Clear broadcast state after processing
-            if msg.from_user.id in user_stage:
-                del user_stage[msg.from_user.id]
-            return
-    
-    # Check if admin clicked broadcast button and then sent a message
-    if msg.from_user.id in user_stage and user_stage[msg.from_user.id] == "broadcasting":
-        process_broadcast_now(msg)
-        # Clear broadcast state after processing
-        del user_stage[msg.from_user.id]
+def process_broadcast(msg):
+    """Process broadcast when admin sends /sendbroadcast command"""
+    if msg.from_user.id != ADMIN_ID:
+        bot.send_message(msg.chat.id, "❌ Unauthorized.")
         return
-
-def process_broadcast_now(msg):
-    """Process broadcast immediately"""
-    source = msg
+    
+    source = msg.reply_to_message if msg.reply_to_message else msg
     text = getattr(source, "text", None) or getattr(source, "caption", "") or ""
     is_photo = bool(getattr(source, "photo", None))
     is_video = getattr(source, "video", None) is not None
     is_document = getattr(source, "document", None) is not None
     
-    bot.send_message(msg.chat.id, "📡 Broadcasting started... Please wait.")
+    bot.send_message(ADMIN_ID, "📡 Broadcasting started... Please wait.")
     threading.Thread(target=broadcast_thread, args=(source, text, is_photo, is_video, is_document)).start()
 
 def broadcast_thread(source_msg, text, is_photo, is_video, is_document):
@@ -1649,7 +1629,7 @@ def broadcast_thread(source_msg, text, is_photo, is_video, is_document):
                     bot.send_message(ADMIN_ID, f"✅ Sent {sent}/{total} users...")
                 except Exception:
                     pass
-            time.sleep(0.1)
+            time.sleep(0.06)
         
         except Exception as e:
             failed += 1
@@ -2121,7 +2101,7 @@ def chat_handler(msg):
     
     ensure_user_exists(user_id, msg.from_user.first_name or "Unknown", msg.from_user.username)
     
-    # ADMIN DEDUCT PROCESS HANDLER - FIXED
+    # ADMIN DEDUCT PROCESS HANDLER - FIXED (from second code)
     if user_id == ADMIN_ID and user_id in admin_deduct_state:
         # Check which step admin is on
         state = admin_deduct_state[user_id]
@@ -2151,11 +2131,10 @@ def chat_handler(msg):
                     f"💰 Current Balance: {format_currency(current_balance)}\n\n"
                     f"💸 Enter amount to deduct (max {format_currency(current_balance)}):"
                 )
-            
             except ValueError:
                 bot.send_message(ADMIN_ID, "❌ Invalid User ID. Please enter numeric ID only:")
-                return
-        
+            return
+            
         elif state["step"] == "ask_amount":
             try:
                 amount = float(msg.text.strip())
@@ -2167,10 +2146,7 @@ def chat_handler(msg):
                     return
                 
                 if amount > current_balance:
-                    bot.send_message(
-                        ADMIN_ID,
-                        f"❌ Amount exceeds user's balance. Maximum: {format_currency(current_balance)}\nPlease enter valid amount:"
-                    )
+                    bot.send_message(ADMIN_ID, f"❌ Amount exceeds user's balance. Maximum: {format_currency(current_balance)}\nPlease enter valid amount:")
                     return
                 
                 # Store amount and move to next step
@@ -2182,12 +2158,10 @@ def chat_handler(msg):
                 }
                 
                 bot.send_message(ADMIN_ID, "📝 Enter reason for balance deduction:")
-                return
-            
             except ValueError:
                 bot.send_message(ADMIN_ID, "❌ Invalid amount. Please enter numeric value only:")
-                return
-        
+            return
+            
         elif state["step"] == "ask_reason":
             reason = msg.text.strip()
             target_user_id = admin_deduct_state[user_id]["target_user_id"]
@@ -2217,7 +2191,10 @@ def chat_handler(msg):
                     "old_balance": current_balance,
                     "new_balance": new_balance
                 }
-                transactions_col.insert_one(deduction_record)
+                # Create deductions collection if not exists
+                if 'deductions' not in db.list_collection_names():
+                    db.create_collection('deductions')
+                db['deductions'].insert_one(deduction_record)
                 
                 # Send confirmation to admin
                 bot.send_message(
@@ -2249,13 +2226,18 @@ def chat_handler(msg):
                 
                 # Cleanup state
                 del admin_deduct_state[user_id]
-                return
-            
+                
             except Exception as e:
                 logger.exception("Error in balance deduction:")
                 bot.send_message(ADMIN_ID, f"❌ Error deducting balance: {str(e)}")
                 del admin_deduct_state[user_id]
-                return
+            return
+    
+    # Original admin commands
+    if user_id == ADMIN_ID:
+        if msg.text and msg.text.strip().lower() == "/sendbroadcast":
+            process_broadcast(msg)
+        return
     
     # Check if it's a normal message from admin (not part of any flow)
     if user_id == ADMIN_ID and msg.text and msg.text.strip().lower() == "/broadcast":
