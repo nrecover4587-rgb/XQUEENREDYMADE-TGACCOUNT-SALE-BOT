@@ -2098,168 +2098,159 @@ def process_purchase(user_id, account_id, chat_id, message_id, callback_id):
         except:
             pass
 
-# -----------------------
 # MESSAGE HANDLER FOR ADMIN DEDUCT AND BROADCAST - COMPLETELY FIXED
 # -----------------------
 @bot.message_handler(func=lambda m: True, content_types=['text','photo','video','document'])
 def chat_handler(msg):
     user_id = msg.from_user.id
-    
+
     # Check if user is banned
     if is_user_banned(user_id):
         return
-    
-    ensure_user_exists(user_id, msg.from_user.first_name or "Unknown", msg.from_user.username)
-    
+
+    ensure_user_exists(
+        user_id,
+        msg.from_user.first_name or "Unknown",
+        msg.from_user.username
+    )
+
     # Skip commands ONLY if admin is NOT in deduct flow
     if (
-       msg.text
-         and msg.text.startswith('/')
-            and not (user_id == ADMIN_ID and user_id in admin_deduct_state)
-):
-    return
-    
-    # ADMIN DEDUCT PROCESS HANDLER - COMPLETELY FIXED
+        msg.text
+        and msg.text.startswith('/')
+        and not (user_id == ADMIN_ID and user_id in admin_deduct_state)
+    ):
+        return
+
+    # ===============================
+    # ADMIN DEDUCT FLOW (PRIORITY)
+    # ===============================
     if user_id == ADMIN_ID and user_id in admin_deduct_state:
-        # Check which step admin is on
         state = admin_deduct_state[user_id]
-        
+
+        # STEP 1: Ask User ID
         if state["step"] == "ask_user_id":
             try:
                 target_user_id = int(msg.text.strip())
-                # Check if user exists
                 user_exists = users_col.find_one({"user_id": target_user_id})
                 if not user_exists:
-                    bot.send_message(ADMIN_ID, "❌ User not found in database. Please enter valid User ID:")
+                    bot.send_message(ADMIN_ID, "❌ User not found. Enter valid User ID:")
                     return
-                
-                # Get current balance of target user
+
                 current_balance = get_balance(target_user_id)
-                
-                # Store target user ID and move to next step
+
                 admin_deduct_state[user_id] = {
                     "step": "ask_amount",
                     "target_user_id": target_user_id,
                     "current_balance": current_balance
                 }
-                
+
                 bot.send_message(
                     ADMIN_ID,
                     f"👤 User ID: {target_user_id}\n"
                     f"💰 Current Balance: {format_currency(current_balance)}\n\n"
-                    f"💸 Enter amount to deduct (max {format_currency(current_balance)}):"
+                    f"💸 Enter amount to deduct:"
                 )
                 return
-            
+
             except ValueError:
-                bot.send_message(ADMIN_ID, "❌ Invalid User ID. Please enter numeric ID only:")
+                bot.send_message(ADMIN_ID, "❌ Invalid User ID. Enter numeric ID:")
                 return
-        
+
+        # STEP 2: Ask Amount
         elif state["step"] == "ask_amount":
             try:
                 amount = float(msg.text.strip())
-                target_user_id = state["target_user_id"]
                 current_balance = state["current_balance"]
-                
+
                 if amount <= 0:
-                    bot.send_message(ADMIN_ID, "❌ Amount must be greater than 0. Please enter valid amount:")
+                    bot.send_message(ADMIN_ID, "❌ Amount must be greater than 0:")
                     return
-                
+
                 if amount > current_balance:
-                    bot.send_message(ADMIN_ID, f"❌ Amount exceeds user's balance. Maximum: {format_currency(current_balance)}\nPlease enter valid amount:")
+                    bot.send_message(
+                        ADMIN_ID,
+                        f"❌ Amount exceeds balance ({format_currency(current_balance)}):"
+                    )
                     return
-                
-                # Store amount and move to next step
+
                 admin_deduct_state[user_id] = {
                     "step": "ask_reason",
-                    "target_user_id": target_user_id,
+                    "target_user_id": state["target_user_id"],
                     "amount": amount,
                     "current_balance": current_balance
                 }
-                
-                bot.send_message(ADMIN_ID, "📝 Enter reason for balance deduction:")
+
+                bot.send_message(ADMIN_ID, "📝 Enter reason for deduction:")
                 return
-            
+
             except ValueError:
-                bot.send_message(ADMIN_ID, "❌ Invalid amount. Please enter numeric value only:")
+                bot.send_message(ADMIN_ID, "❌ Invalid amount. Enter number:")
                 return
-        
+
+        # STEP 3: Ask Reason + Deduct
         elif state["step"] == "ask_reason":
             reason = msg.text.strip()
-            target_user_id = admin_deduct_state[user_id]["target_user_id"]
-            amount = admin_deduct_state[user_id]["amount"]
-            current_balance = admin_deduct_state[user_id]["current_balance"]
-            
-            if not reason:
-                bot.send_message(ADMIN_ID, "❌ Reason cannot be empty. Please enter reason:")
-                return
-            
-            # Now deduct the balance
-            try:
-                # Deduct balance from user
-                deduct_balance(target_user_id, amount)
-                new_balance = get_balance(target_user_id)
-                
-                # Record transaction in database
-                transaction_id = f"DEDUCT{target_user_id}{int(time.time())}"
-                deduction_record = {
-                    "transaction_id": transaction_id,
-                    "user_id": target_user_id,
-                    "amount": amount,
-                    "type": "deduction",
-                    "reason": reason,
-                    "admin_id": user_id,
-                    "timestamp": datetime.utcnow(),
-                    "old_balance": current_balance,
-                    "new_balance": new_balance
-                }
-                # Create deductions collection if not exists
-                if 'deductions' not in db.list_collection_names():
-                    db.create_collection('deductions')
-                db['deductions'].insert_one(deduction_record)
-                
-                # Send confirmation to admin
-                bot.send_message(
-                    ADMIN_ID,
-                    f"✅ **Balance Deducted Successfully!**\n\n"
-                    f"👤 User ID: {target_user_id}\n"
-                    f"💰 Amount Deducted: {format_currency(amount)}\n"
-                    f"📝 Reason: {reason}\n"
-                    f"📊 Old Balance: {format_currency(current_balance)}\n"
-                    f"📊 New Balance: {format_currency(new_balance)}\n"
-                    f"🆔 Transaction ID: {transaction_id}",
-                    parse_mode="Markdown"
-                )
-                
-                # Send notification to user
-                try:
-                    bot.send_message(
-                        target_user_id,
-                        f"⚠️ **Balance Deducted by Admin**\n\n"
-                        f"💰 Amount: {format_currency(amount)}\n"
-                        f"📝 Reason: {reason}\n"
-                        f"📊 Your New Balance: {format_currency(new_balance)}\n"
-                        f"🆔 Transaction ID: {transaction_id}\n\n"
-                        f"Contact admin if this was a mistake.",
-                        parse_mode="Markdown"
-                    )
-                except Exception as e:
-                    bot.send_message(ADMIN_ID, f"⚠️ Could not notify user {target_user_id} (maybe blocked)")
-                
-                # Cleanup state
-                del admin_deduct_state[user_id]
-                return
-            
-            except Exception as e:
-                logger.exception("Error in balance deduction:")
-                bot.send_message(ADMIN_ID, f"❌ Error deducting balance: {str(e)}")
-                del admin_deduct_state[user_id]
-                return
-    
-    # Default response for other messages
-    if msg.chat.type == 'private':
-        bot.send_message(user_id, "⚠️ Please use /start to begin or press buttons from the menu.")
 
+            if not reason:
+                bot.send_message(ADMIN_ID, "❌ Reason cannot be empty:")
+                return
+
+            target_user_id = state["target_user_id"]
+            amount = state["amount"]
+            old_balance = state["current_balance"]
+
+            deduct_balance(target_user_id, amount)
+            new_balance = get_balance(target_user_id)
+
+            transaction_id = f"DEDUCT{target_user_id}{int(time.time())}"
+
+            if 'deductions' not in db.list_collection_names():
+                db.create_collection('deductions')
+
+            db['deductions'].insert_one({
+                "transaction_id": transaction_id,
+                "user_id": target_user_id,
+                "amount": amount,
+                "reason": reason,
+                "admin_id": user_id,
+                "old_balance": old_balance,
+                "new_balance": new_balance,
+                "timestamp": datetime.utcnow()
+            })
+
+            bot.send_message(
+                ADMIN_ID,
+                f"✅ Balance Deducted Successfully\n\n"
+                f"👤 User: {target_user_id}\n"
+                f"💰 Amount: {format_currency(amount)}\n"
+                f"📝 Reason: {reason}\n"
+                f"📉 Old Balance: {format_currency(old_balance)}\n"
+                f"📈 New Balance: {format_currency(new_balance)}\n"
+                f"🆔 Txn ID: {transaction_id}"
+            )
+
+            try:
+                bot.send_message(
+                    target_user_id,
+                    f"⚠️ Balance Deducted by Admin\n\n"
+                    f"💰 Amount: {format_currency(amount)}\n"
+                    f"📝 Reason: {reason}\n"
+                    f"📈 New Balance: {format_currency(new_balance)}\n"
+                    f"🆔 Txn ID: {transaction_id}"
+                )
+            except:
+                bot.send_message(ADMIN_ID, "⚠️ User notification failed (maybe blocked)")
+
+            del admin_deduct_state[user_id]
+            return
+
+    # Default reply
+    if msg.chat.type == "private":
+        bot.send_message(
+            user_id,
+            "⚠️ Please use /start or buttons from the menu."
+        )
 # -----------------------
 # RUN BOT
 # -----------------------
