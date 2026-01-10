@@ -647,21 +647,29 @@ async def logout_session_async(session_id, user_id, otp_sessions_col, accounts_c
         
         # FIXED: Mark account as used only if accounts_col is not None
         account_id = session_data.get("account_id")
+        # logout fix by xqueen 
         if account_id and accounts_col is not None:
             try:
-                accounts_col.update_one(
-                    {"_id": ObjectId(account_id)},
-                    {"$set": {"used": True, "used_at": datetime.utcnow()}}
-                )
-            except:
-                pass
-        
-        logger.info(f"User {user_id} logged out from session {session_id}")
-        return True, "Logged out successfully"
-        
-    except Exception as e:
-        logger.error(f"Logout error: {e}")
-        return False, str(e)
+                account = accounts_col.find_one({"_id": ObjectId(account_id)})
+                if account and account.get("session_string"):
+                    from pyrogram import Client
+
+                    tg_client = Client(
+                        name=f"logout_{session_id}",
+                        session_string=account["session_string"],
+                        api_id=int(account.get("api_id", 6435225)),
+                        api_hash=account.get("api_hash", "4e984ea35f854762dcde906dce426c2d"),
+                        in_memory=True,
+                        no_updates=True
+                    )
+
+                    await tg_client.connect()
+                    await tg_client.log_out()   # ✅ REAL LOGOUT
+                    await tg_client.disconnect()
+
+                    logger.info(f"Telegram account FORCE logged out for {account.get('phone')}")
+            except Exception as e:
+                logger.error(f"Telegram logout failed: {e}")
 
 # -----------------------
 # SIMPLE OTP MONITORING (NON-AUTOMATIC)
