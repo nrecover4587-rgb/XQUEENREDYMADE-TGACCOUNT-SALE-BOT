@@ -563,13 +563,7 @@ def handle_callbacks(call):
         # Direct account purchase when clicking country
         elif data.startswith("country_raw_"):
             country_name = data.replace("country_raw_", "")
-
-    direct_purchase_from_country(
-        user_id, country_name,
-        call.message.chat.id,
-        call.message.message_id,
-        call.id
-    )
+            direct_purchase_from_country(user_id, country_name, call.message.chat.id, call.message.message_id, call.id)
         
         elif data.startswith("buy_"):
             account_id = data.split("_", 1)[1]
