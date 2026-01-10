@@ -561,17 +561,15 @@ def handle_callbacks(call):
                 bot.answer_callback_query(call.id, "❌ Unauthorized", show_alert=True)
         
         # Direct account purchase when clicking country
-        elif data.startswith("country_"):
-            # Extract country name from callback
-            country_part = data.replace("country_", "")
-            # Remove "_accounts" if present
-            if "_accounts" in country_part:
-                country_name = country_part.replace("_accounts", "").replace("_", " ").title()
-            else:
-                country_name = country_part.replace("_", " ").title()
-            
-            # Directly process purchase for this country
-            direct_purchase_from_country(user_id, country_name, call.message.chat.id, call.message.message_id, call.id)
+        elif data.startswith("country_raw_"):
+    country_name = data.replace("country_raw_", "")
+
+    direct_purchase_from_country(
+        user_id, country_name,
+        call.message.chat.id,
+        call.message.message_id,
+        call.id
+    )
         
         elif data.startswith("buy_"):
             account_id = data.split("_", 1)[1]
