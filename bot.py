@@ -560,7 +560,7 @@ def handle_callbacks(call):
             else:
                 bot.answer_callback_query(call.id, "❌ Unauthorized", show_alert=True)
         
-        # Direct account purchase when clicking country
+        # FIXED: Direct account purchase when clicking country
         elif data.startswith("country_"):
             # Extract country name from callback
             country_part = data.replace("country_", "")
@@ -588,6 +588,19 @@ def handle_callbacks(call):
         elif data.startswith("get_otp_"):
             session_id = data.split("_", 2)[2]
             get_latest_otp(user_id, session_id, call.message.chat.id, call.id)
+        
+        # Add these new cases for logout confirmation
+        elif data.startswith("confirm_logout_"):
+            session_id = data.split("_", 2)[2]
+            confirm_logout_session(user_id, session_id, call.message.chat.id, call.message.message_id, call.id)
+        
+        elif data.startswith("cancel_logout_"):
+            # Cleanup confirmation message
+            try:
+                bot.delete_message(call.message.chat.id, call.message.message_id)
+            except:
+                pass
+            bot.answer_callback_query(call.id, "❌ Logout cancelled", show_alert=True)
         
         elif data == "back_to_countries":
             show_countries(call.message.chat.id, call.message.message_id)
@@ -912,34 +925,122 @@ def handle_cancel_login(call):
     show_admin_panel(call.message.chat.id)
 
 def handle_logout_session(user_id, session_id, chat_id, callback_id):
-    """Handle user logout from session"""
+    """Handle user logout from session - SIMPLE VERSION"""
     try:
-        if not account_manager:
-            bot.answer_callback_query(callback_id, "❌ Account module not loaded", show_alert=True)
+        # Get session data
+        session_data = otp_sessions_col.find_one({"session_id": session_id})
+        if not session_data:
+            bot.answer_callback_query(callback_id, "❌ Session not found", show_alert=True)
             return
         
-        success, message = account_manager.logout_session_sync(
-            session_id, user_id, otp_sessions_col, accounts_col, orders_col
+        # Check if user owns this session
+        if session_data.get("user_id") != user_id:
+            bot.answer_callback_query(callback_id, "❌ Not authorized", show_alert=True)
+            return
+        
+        # Check if OTP has been received at least once
+        if not session_data.get("otp_code"):
+            bot.answer_callback_query(
+                callback_id, 
+                "❌ No OTP received yet!\nPlease wait for OTP first.", 
+                show_alert=True
+            )
+            return
+        
+        # Show confirmation message
+        confirmation_msg = bot.send_message(
+            chat_id,
+            "⚠️ **Are you sure you want to logout?**\n\n"
+            "This will end your current session and mark the order as completed.\n\n"
+            "Click OK to confirm logout.",
+            reply_markup=InlineKeyboardMarkup().add(
+                InlineKeyboardButton("✅ OK, Logout Now", callback_data=f"confirm_logout_{session_id}"),
+                InlineKeyboardButton("❌ Cancel", callback_data=f"cancel_logout_{session_id}")
+            )
         )
         
-        if success:
-            bot.answer_callback_query(callback_id, "✅ Logged out successfully!", show_alert=True)
-            bot.send_message(
-                chat_id,
-                "🚪 **Logged Out Successfully!**\n\n"
-                "You have been logged out from this session.\n"
-                "Order marked as completed.\n\n"
-                "Thank you for using our service! 👋"
-            )
-        else:
-            bot.answer_callback_query(callback_id, f"❌ {message}", show_alert=True)
-            
+        # Store message ID for cleanup
+        user_states[user_id] = {"logout_confirmation_msg": confirmation_msg.message_id}
+        
+        bot.answer_callback_query(callback_id, "⚠️ Confirm logout...", show_alert=False)
+        
     except Exception as e:
         logger.error(f"Logout handler error: {e}")
+        bot.answer_callback_query(callback_id, "❌ Error", show_alert=True)
+
+def confirm_logout_session(user_id, session_id, chat_id, message_id, callback_id):
+    """Confirm and process logout"""
+    try:
+        # Delete confirmation message
+        try:
+            bot.delete_message(chat_id, message_id)
+        except:
+            pass
+        
+        # Get session data
+        session_data = otp_sessions_col.find_one({"session_id": session_id})
+        if not session_data:
+            bot.answer_callback_query(callback_id, "❌ Session not found", show_alert=True)
+            return
+        
+        session_string = session_data.get("session_string", "")
+        
+        # Show processing message
+        processing_msg = bot.send_message(chat_id, "🔄 Logging out... Please wait...")
+        
+        # Use account manager for logout
+        if account_manager:
+            success, message = account_manager.logout_session_sync(
+                session_id, user_id, otp_sessions_col, accounts_col, orders_col, session_string
+            )
+        else:
+            # Simple database update if account manager not available
+            otp_sessions_col.update_one(
+                {"session_id": session_id},
+                {"$set": {
+                    "status": "completed",
+                    "completed_at": datetime.utcnow(),
+                    "completed_by_user": True,
+                    "logged_out": True
+                }}
+            )
+            success, message = True, "Logged out"
+        
+        # Delete processing message
+        try:
+            bot.delete_message(chat_id, processing_msg.message_id)
+        except:
+            pass
+        
+        if success:
+            bot.answer_callback_query(callback_id, "✅ Successfully logged out", show_alert=True)
+            
+            # Send success message
+            markup = InlineKeyboardMarkup()
+            markup.add(InlineKeyboardButton("🛒 Buy New Account", callback_data="buy_account"))
+            
+            bot.send_message(
+                chat_id,
+                "✅ **Logged Out Successfully!**\n\n"
+                "• Current session terminated\n"
+                "• Order marked as completed\n"
+                "• Thank you for using our service!\n\n"
+                "You can now buy a new account if needed.",
+                reply_markup=markup
+            )
+        else:
+            bot.answer_callback_query(callback_id, f"⚠️ {message}", show_alert=True)
+            bot.send_message(chat_id, f"⚠️ Note: {message}\n\nYour session has been marked as completed in our system.")
+        
+        # Cleanup user state
+        user_states.pop(user_id, None)
+        
+    except Exception as e:
+        logger.error(f"Confirm logout error: {e}")
         bot.answer_callback_query(callback_id, "❌ Error logging out", show_alert=True)
 
 def get_latest_otp(user_id, session_id, chat_id, callback_id):
-    """Get the latest OTP for a session - SHOWS ONLY WHEN CLICKED"""
+    """Get the latest OTP for a session"""
     try:
         # Find the session
         session_data = otp_sessions_col.find_one({"session_id": session_id})
@@ -947,58 +1048,18 @@ def get_latest_otp(user_id, session_id, chat_id, callback_id):
             bot.answer_callback_query(callback_id, "❌ Session not found", show_alert=True)
             return
         
-        # Check if OTP already exists in database
-        existing_otp = session_data.get("last_otp")
+        otp_code = session_data.get("otp_code")
+        two_step_password = session_data.get("two_step_password")
         
-        if existing_otp:
-            # OTP already in database, show it
-            otp_code = existing_otp
-            logger.info(f"Using existing OTP from database: {otp_code}")
-        else:
-            # Try to get latest OTP from session
-            bot.answer_callback_query(callback_id, "🔍 Searching for OTP...", show_alert=False)
-            
-            session_string = session_data.get("session_string")
-            if not session_string:
-                bot.answer_callback_query(callback_id, "❌ No session string found", show_alert=True)
-                return
-            
-            otp_code = account_manager.get_latest_otp_sync(session_string)
-            
-            if not otp_code:
-                bot.answer_callback_query(callback_id, "❌ No OTP received yet", show_alert=True)
-                return
-            
-            # Save to database
-            otp_sessions_col.update_one(
-                {"session_id": session_id},
-                {"$set": {
-                    "has_otp": True,
-                    "last_otp": otp_code,
-                    "last_otp_time": datetime.utcnow(),
-                    "status": "otp_received"
-                }}
-            )
+        if not otp_code:
+            bot.answer_callback_query(callback_id, "❌ No OTP received yet", show_alert=True)
+            return
         
-        # Get account details for 2FA password
+        # Get account details
         account_id = session_data.get("account_id")
-        account = None
-        two_step_password = ""
+        account = accounts_col.find_one({"_id": ObjectId(account_id)}) if account_id else None
         
-        if account_id:
-            try:
-                account = accounts_col.find_one({"_id": ObjectId(account_id)})
-                if account:
-                    two_step_password = account.get("two_step_password", "")
-            except:
-                pass
-        
-        # Check if we should show "Get OTP Again" or "Get OTP"
-        has_otp = session_data.get("has_otp", False)
-        button_text = "🔄 Get OTP Again" if has_otp else "🔢 Get OTP"
-        
-        # Create message
-        message = f"✅ **Latest OTP**\n\n"
+        message = f"✅ **Latest OTP Received**\n\n"
         message += f"📱 Phone: `{session_data.get('phone', 'N/A')}`\n"
         message += f"🔢 OTP Code: `{otp_code}`\n"
         
@@ -1007,21 +1068,14 @@ def get_latest_otp(user_id, session_id, chat_id, callback_id):
         elif account and account.get("two_step_password"):
             message += f"🔐 2FA Password: `{account.get('two_step_password')}`\n"
         
-        message += f"\n⏰ Time: {datetime.utcnow().strftime('%H:%M:%S')}"
-        message += f"\n\nEnter this code in Telegram X app."
+        message += f"\nEnter this code in Telegram X app."
         
-        # Create inline keyboard
+        # Create inline keyboard with Get OTP and Logout buttons
         markup = InlineKeyboardMarkup(row_width=2)
-        
-        if has_otp:
-            # If OTP already received, show both buttons
-            markup.add(
-                InlineKeyboardButton("🔄 Get OTP Again", callback_data=f"get_otp_{session_id}"),
-                InlineKeyboardButton("🚪 Logout", callback_data=f"logout_session_{session_id}")
-            )
-        else:
-            # First time OTP, show only Get OTP button
-            markup.add(InlineKeyboardButton("🔢 Get OTP", callback_data=f"get_otp_{session_id}"))
+        markup.add(
+            InlineKeyboardButton("🔄 Get Latest OTP", callback_data=f"get_otp_{session_id}"),
+            InlineKeyboardButton("🚪 Logout", callback_data=f"logout_session_{session_id}")
+        )
         
         bot.send_message(
             chat_id,
@@ -1912,144 +1966,6 @@ def handle_payment_screenshot(msg):
         bot.send_message(msg.chat.id, "❌ No pending recharge found. Use /start to recharge.")
 
 # -----------------------
-# PROCESS PURCHASE FUNCTION (UPDATED)
-# -----------------------
-def process_purchase(user_id, account_id, chat_id, message_id, callback_id):
-    try:
-        try:
-            account = accounts_col.find_one({"_id": ObjectId(account_id)})
-        except Exception:
-            account = accounts_col.find_one({"_id": account_id})
-        if not account:
-            bot.answer_callback_query(callback_id, "❌ Account not available", show_alert=True)
-            return
-        
-        if account.get('used', False):
-            bot.answer_callback_query(callback_id, "❌ Account already sold out", show_alert=True)
-            # Go back to country selection
-            show_countries(chat_id, message_id)
-            return
-        
-        # Get country price
-        country = get_country_by_name(account['country'])
-        if not country:
-            bot.answer_callback_query(callback_id, "❌ Country not found", show_alert=True)
-            return
-        
-        price = country['price']
-        
-        balance = get_balance(user_id)
-        
-        if balance < price:
-            needed = price - balance
-            bot.answer_callback_query(
-                callback_id, 
-                f"❌ Insufficient balance!\nNeed: {format_currency(price)}\nHave: {format_currency(balance)}\nRequired: {format_currency(needed)} more", 
-                show_alert=True
-            )
-            return
-        
-        deduct_balance(user_id, price)
-        
-        # Create OTP session for this purchase
-        session_id = f"otp_{user_id}_{int(time.time())}"
-        
-        otp_session = {
-            "session_id": session_id,
-            "user_id": user_id,
-            "phone": account['phone'],
-            "session_string": account.get('session_string', ''),
-            "status": "active",
-            "created_at": datetime.utcnow(),
-            "account_id": str(account['_id']),
-            "has_otp": False,  # Start with False, becomes True when OTP received
-            "last_otp": None,
-            "last_otp_time": None
-        }
-        
-        otp_sessions_col.insert_one(otp_session)
-        
-        # Create order
-        order = {
-            "user_id": user_id,
-            "account_id": str(account.get('_id')),
-            "country": account['country'],
-            "price": price,
-            "phone_number": account.get('phone', 'N/A'),
-            "session_id": session_id,
-            "status": "waiting_otp",
-            "created_at": datetime.utcnow(),
-            "monitoring_duration": 1800
-        }
-        order_id = orders_col.insert_one(order).inserted_id
-        
-        # Mark account as used
-        try:
-            accounts_col.update_one({"_id": account.get('_id')}, {"$set": {"used": True, "used_at": datetime.utcnow()}})
-        except Exception:
-            accounts_col.update_one({"_id": ObjectId(account_id)}, {"$set": {"used": True, "used_at": datetime.utcnow()}})
-        
-        # Start simple background monitoring (session keep-alive only, no auto OTP search)
-        def start_simple_monitoring():
-            try:
-                account_manager.start_simple_monitoring_sync(
-                    account.get('session_string', ''),
-                    session_id,
-                    1800
-                )
-            except Exception as e:
-                logger.error(f"Simple monitoring error: {e}")
-        
-        # Start monitoring thread
-        thread = threading.Thread(target=start_simple_monitoring, daemon=True)
-        thread.start()
-        
-        markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("🛒 Buy Another", callback_data="buy_account"))
-        
-        # USER KO SIRF PHONE NUMBER DIKHAO - NO API ID/HASH
-        account_details = f"""✅ **Purchase Successful!**
-
-🌍 Country: {account['country']}
-💸 Price: {format_currency(price)}
-📱 Phone Number: `{account.get('phone', 'N/A')}`"""
-
-        if account.get('two_step_password'):
-            account_details += f"\n🔒 2FA Password: `{account.get('two_step_password', 'N/A')}`"
-
-        account_details += f"\n\n📲 **Instructions:**\n"
-        account_details += f"1. Open Telegram X app\n"
-        account_details += f"2. Enter phone number: `{account.get('phone', 'N/A')}`\n"
-        account_details += f"3. Click 'Next'\n"
-        account_details += f"4. **Click 'Get OTP' button below when you need OTP**\n\n"
-        account_details += f"⏳ OTP available for 30 minutes"
-        
-        # Add ONLY Get OTP button (no logout)
-        get_otp_markup = InlineKeyboardMarkup()
-        get_otp_markup.add(InlineKeyboardButton("🔢 Get OTP", callback_data=f"get_otp_{session_id}"))
-        
-        account_details += f"\n💰 Remaining Balance: {format_currency(get_balance(user_id))}"
-        
-        bot.send_message(
-            chat_id,
-            account_details,
-            parse_mode="Markdown",
-            reply_markup=get_otp_markup
-        )
-        
-        bot.answer_callback_query(callback_id, "✅ Purchase successful! Click Get OTP when needed.", show_alert=True)
-        
-        # Update the account display to show out of stock
-        show_countries(chat_id, message_id)
-        
-    except Exception as e:
-        logger.error(f"Purchase error: {e}")
-        try:
-            bot.answer_callback_query(callback_id, "❌ Purchase failed", show_alert=True)
-        except:
-            pass
-
-# -----------------------
 # MESSAGE HANDLER FOR ADMIN DEDUCT AND OTHER STATES
 # -----------------------
 @bot.message_handler(func=lambda m: True, content_types=['text','photo','video','document'])
@@ -2304,6 +2220,158 @@ def complete_order(user_id, session_id, chat_id, callback_id):
     except Exception as e:
         logger.error(f"Complete order error: {e}")
         bot.answer_callback_query(callback_id, "❌ Error completing order", show_alert=True)
+
+def process_purchase(user_id, account_id, chat_id, message_id, callback_id):
+    try:
+        try:
+            account = accounts_col.find_one({"_id": ObjectId(account_id)})
+        except Exception:
+            account = accounts_col.find_one({"_id": account_id})
+        if not account:
+            bot.answer_callback_query(callback_id, "❌ Account not available", show_alert=True)
+            return
+        
+        if account.get('used', False):
+            bot.answer_callback_query(callback_id, "❌ Account already sold out", show_alert=True)
+            # Go back to country selection
+            show_countries(chat_id, message_id)
+            return
+        
+        # Get country price
+        country = get_country_by_name(account['country'])
+        if not country:
+            bot.answer_callback_query(callback_id, "❌ Country not found", show_alert=True)
+            return
+        
+        price = country['price']
+        
+        balance = get_balance(user_id)
+        
+        if balance < price:
+            needed = price - balance
+            bot.answer_callback_query(
+                callback_id, 
+                f"❌ Insufficient balance!\nNeed: {format_currency(price)}\nHave: {format_currency(balance)}\nRequired: {format_currency(needed)} more", 
+                show_alert=True
+            )
+            return
+        
+        deduct_balance(user_id, price)
+        
+        # Create OTP session for this purchase
+        session_id = f"otp_{user_id}_{int(time.time())}"
+        
+        otp_session = {
+            "session_id": session_id,
+            "user_id": user_id,
+            "phone": account['phone'],
+            "session_string": account.get('session_string', ''),
+            "status": "monitoring",
+            "created_at": datetime.utcnow(),
+            "account_id": str(account['_id']),
+            "monitor_start_time": datetime.utcnow(),
+            "monitor_duration": 1800,  # 30 minutes
+            "total_otps_received": 0,
+            "two_step_password": account.get('two_step_password', '')
+        }
+        
+        otp_sessions_col.insert_one(otp_session)
+        
+        # Create order
+        order = {
+            "user_id": user_id,
+            "account_id": str(account.get('_id')),
+            "country": account['country'],
+            "price": price,
+            "phone_number": account.get('phone', 'N/A'),
+            "session_id": session_id,
+            "status": "waiting_otp",
+            "created_at": datetime.utcnow(),
+            "monitoring_duration": 1800
+        }
+        order_id = orders_col.insert_one(order).inserted_id
+        
+        # Mark account as used
+        try:
+            accounts_col.update_one({"_id": account.get('_id')}, {"$set": {"used": True, "used_at": datetime.utcnow()}})
+        except Exception:
+            accounts_col.update_one({"_id": ObjectId(account_id)}, {"$set": {"used": True, "used_at": datetime.utcnow()}})
+        
+        # Start OTP monitoring in background for 30 minutes
+        if account.get('session_string'):
+            # Run async OTP monitoring in a thread
+            def start_otp_monitoring_thread():
+                try:
+                    from account import continuous_otp_monitor
+                    
+                    if async_manager:
+                        async_manager.run_async(
+                            continuous_otp_monitor(
+                                account['session_string'],
+                                user_id,
+                                account['phone'],
+                                session_id,
+                                1800,
+                                GLOBAL_API_ID,
+                                GLOBAL_API_HASH,
+                                bot,
+                                otp_sessions_col
+                            )
+                        )
+                except Exception as e:
+                    logger.error(f"OTP monitoring thread error: {e}")
+            
+            # Start thread
+            thread = threading.Thread(target=start_otp_monitoring_thread, daemon=True)
+            thread.start()
+        
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton("🛒 Buy Another", callback_data="buy_account"))
+        
+        # USER KO SIRF PHONE NUMBER DIKHAO - NO API ID/HASH
+        account_details = f"""✅ **Purchase Successful!**
+
+🌍 Country: {account['country']}
+💸 Price: {format_currency(price)}
+📱 Phone Number: `{account.get('phone', 'N/A')}`"""
+
+        if account.get('two_step_password'):
+            account_details += f"\n🔒 2FA Password: `{account.get('two_step_password', 'N/A')}`"
+
+        account_details += f"\n\n📲 **Instructions:**\n"
+        account_details += f"1. Open Telegram X app\n"
+        account_details += f"2. Enter phone number: `{account.get('phone', 'N/A')}`\n"
+        account_details += f"3. Click 'Next'\n"
+        account_details += f"4. **Waiting for OTP...**\n\n"
+        account_details += f"⏳ OTP will be sent here automatically within 30 minutes\n"
+        
+        # Add Get OTP button for immediate access
+        get_otp_markup = InlineKeyboardMarkup(row_width=2)
+        get_otp_markup.add(
+            InlineKeyboardButton("🔢 Get OTP", callback_data=f"get_otp_{session_id}"),
+            InlineKeyboardButton("🚪 Logout", callback_data=f"logout_session_{session_id}")
+        )
+        
+        account_details += f"\n💰 Remaining Balance: {format_currency(get_balance(user_id))}"
+        
+        bot.send_message(
+            chat_id,
+            account_details,
+            parse_mode="Markdown",
+            reply_markup=get_otp_markup
+        )
+        
+        bot.answer_callback_query(callback_id, "✅ Purchase successful! Waiting for OTP...", show_alert=True)
+        
+        # Update the account display to show out of stock
+        show_countries(chat_id, message_id)
+        
+    except Exception as e:
+        logger.error(f"Purchase error: {e}")
+        try:
+            bot.answer_callback_query(callback_id, "❌ Purchase failed", show_alert=True)
+        except:
+            pass
 
 def show_my_orders(user_id, chat_id):
     orders = list(orders_col.find({"user_id": user_id}).sort("created_at", -1).limit(5))
