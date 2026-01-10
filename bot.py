@@ -1861,7 +1861,10 @@ def process_recharge_amount_manual(msg):
         bot.send_message(msg.chat.id, "❌ Invalid amount. Enter numbers only:")
         bot.register_next_step_handler(msg, process_recharge_amount_manual)
 
-@bot.message_handler(content_types=['photo', 'text'])
+@bot.message_handler(
+    func=lambda m: user_stage.get(m.from_user.id) == "waiting_recharge_proof",
+    content_types=['photo', 'text']
+)
 def handle_payment_proof(msg):
     user_id = msg.from_user.id
     
