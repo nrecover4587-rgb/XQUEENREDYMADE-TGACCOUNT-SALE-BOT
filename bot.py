@@ -596,8 +596,8 @@ def handle_callbacks(call):
         # ADMIN FEATURES
         elif data == "broadcast_menu":
             if is_admin(user_id):
-                bot.answer_callback_query(call.id, "📢 Send message to broadcast to all users")
-                bot.send_message(call.message.chat.id, "📢 Reply to a message (or send one) to broadcast to all users.")
+                bot.answer_callback_query(call.id, "📢 Send or reply to a message to broadcast")
+                bot.send_message(call.message.chat.id, "📢 **Send Broadcast Message**\n\nSend or reply to a message to broadcast to all users.")
             else:
                 bot.answer_callback_query(call.id, "❌ Unauthorized", show_alert=True)
         
@@ -673,8 +673,9 @@ def handle_callbacks(call):
         elif data.startswith("remove_country_"):
             if is_admin(user_id):
                 country_name = data.split("_", 2)[2]
-                remove_country(country_name, call.message.chat.id)
-                bot.answer_callback_query(call.id, f"Removing {country_name}...")
+                # Actually remove the country
+                result = remove_country(country_name, call.message.chat.id, call.message.message_id)
+                bot.answer_callback_query(call.id, result, show_alert=True)
             else:
                 bot.answer_callback_query(call.id, "❌ Unauthorized", show_alert=True)
         
@@ -702,12 +703,6 @@ def show_main_menu(chat_id):
             "Contact admin @anmol144 for assistance."
         )
         return
-    
-    # Delete existing message and send fresh main menu
-    try:
-        bot.delete_message(chat_id, chat_id)
-    except:
-        pass
     
     # Send fresh start message with image
     caption = """<blockquote>🥂 <b>Welcome To OTP Bot By Xqueen</b> 🥂</blockquote>
@@ -1423,20 +1418,37 @@ def show_country_removal(chat_id):
         parse_mode="Markdown"
     )
 
-def remove_country(country_name, chat_id):
+def remove_country(country_name, chat_id, message_id=None):
     """Remove a country from the system"""
     if not is_admin(chat_id):
-        bot.send_message(chat_id, "❌ Unauthorized access")
-        return
+        return "❌ Unauthorized access"
     
-    # Mark country as inactive
-    countries_col.update_one(
-        {"name": country_name},
-        {"$set": {"status": "inactive", "removed_at": datetime.utcnow()}}
-    )
+    try:
+        # Mark country as inactive
+        result = countries_col.update_one(
+            {"name": country_name, "status": "active"},
+            {"$set": {"status": "inactive", "removed_at": datetime.utcnow()}}
+        )
+        
+        if result.modified_count > 0:
+            # Delete all accounts for this country
+            accounts_col.delete_many({"country": country_name})
+            
+            if message_id:
+                try:
+                    bot.delete_message(chat_id, message_id)
+                except:
+                    pass
+            
+            bot.send_message(chat_id, f"✅ Country '{country_name}' and all its accounts have been removed.")
+            show_country_management(chat_id)
+            return f"✅ {country_name} removed successfully"
+        else:
+            return f"❌ Country '{country_name}' not found or already removed"
     
-    bot.send_message(chat_id, f"✅ Country '{country_name}' has been removed.")
-    show_country_management(chat_id)
+    except Exception as e:
+        logger.error(f"Error removing country: {e}")
+        return f"❌ Error removing country: {str(e)}"
 
 def ask_ban_user(message):
     """Ask for user ID to ban"""
@@ -1573,7 +1585,74 @@ def show_user_ranking(chat_id):
         bot.send_message(chat_id, f"❌ Error generating ranking: {str(e)}")
 
 # -----------------------
-# FUNCTIONS FROM FIRST CODE
+# BROADCAST FUNCTION
+# -----------------------
+@bot.message_handler(func=lambda msg: is_admin(msg.from_user.id) and msg.reply_to_message)
+def handle_broadcast_reply(msg):
+    """Handle broadcast when admin replies to a message"""
+    if not msg.reply_to_message:
+        return
+    
+    # Check if the replied message is about broadcasting
+    replied_text = msg.reply_to_message.text or ""
+    if "broadcast" in replied_text.lower() or "📢" in replied_text:
+        process_broadcast_now(msg)
+
+def process_broadcast_now(msg):
+    """Process broadcast immediately"""
+    source = msg
+    text = getattr(source, "text", None) or getattr(source, "caption", "") or ""
+    is_photo = bool(getattr(source, "photo", None))
+    is_video = getattr(source, "video", None) is not None
+    is_document = getattr(source, "document", None) is not None
+    
+    bot.send_message(msg.chat.id, "📡 Broadcasting started... Please wait.")
+    threading.Thread(target=broadcast_thread, args=(source, text, is_photo, is_video, is_document)).start()
+
+def broadcast_thread(source_msg, text, is_photo, is_video, is_document):
+    users = list(users_col.find())
+    total = len(users)
+    sent = 0
+    failed = 0
+    progress_interval = 25
+    
+    for user in users:
+        uid = user.get("user_id")
+        if not uid or uid == ADMIN_ID:
+            continue
+        
+        try:
+            if is_photo and getattr(source_msg, "photo", None):
+                bot.send_photo(uid, photo=source_msg.photo[-1].file_id, caption=text or "")
+            elif is_video and getattr(source_msg, "video", None):
+                bot.send_video(uid, video=source_msg.video.file_id, caption=text or "")
+            elif is_document and getattr(source_msg, "document", None):
+                bot.send_document(uid, document=source_msg.document.file_id, caption=text or "")
+            else:
+                bot.send_message(uid, f"📢 **Broadcast from Admin**\n\n{text}")
+            
+            sent += 1
+            if sent % progress_interval == 0:
+                try:
+                    bot.send_message(ADMIN_ID, f"✅ Sent {sent}/{total} users...")
+                except Exception:
+                    pass
+            time.sleep(0.1)
+        
+        except Exception as e:
+            failed += 1
+            logger.error(f"Broadcast failed for {uid}: {e}")
+    
+    try:
+        bot.send_message(
+            ADMIN_ID,
+            f"🎯 **Broadcast Completed!**\n\n✅ Sent: {sent}\n❌ Failed: {failed}\n👥 Total: {total}"
+        )
+    except Exception:
+        pass
+
+# -----------------------
+# OTHER FUNCTIONS FROM FIRST CODE
 # -----------------------
 def ask_refund_user(message):
     try:
@@ -1656,62 +1735,6 @@ def process_user_message(msg, target_user_id):
     except Exception as e:
         logger.exception("Error in process_user_message:")
         bot.send_message(msg.chat.id, f"Error sending message: {e}")
-
-def process_broadcast(msg):
-    if not is_admin(msg.from_user.id):
-        bot.send_message(msg.chat.id, "❌ Unauthorized.")
-        return
-    
-    source = msg.reply_to_message if msg.reply_to_message else msg
-    text = getattr(source, "text", None) or getattr(source, "caption", "") or ""
-    is_photo = bool(getattr(source, "photo", None))
-    is_video = getattr(source, "video", None) is not None
-    is_document = getattr(source, "document", None) is not None
-    
-    bot.send_message(msg.chat.id, "📡 Broadcasting started... Please wait.")
-    threading.Thread(target=broadcast_thread, args=(source, text, is_photo, is_video, is_document)).start()
-
-def broadcast_thread(source_msg, text, is_photo, is_video, is_document):
-    users = list(users_col.find())
-    total = len(users)
-    sent = 0
-    failed = 0
-    progress_interval = 25
-    
-    for user in users:
-        uid = user.get("user_id")
-        if not uid or uid == ADMIN_ID:
-            continue
-        
-        try:
-            if is_photo and getattr(source_msg, "photo", None):
-                bot.send_photo(uid, photo=source_msg.photo[-1].file_id, caption=text or "")
-            elif is_video and getattr(source_msg, "video", None):
-                bot.send_video(uid, video=source_msg.video.file_id, caption=text or "")
-            elif is_document and getattr(source_msg, "document", None):
-                bot.send_document(uid, document=source_msg.document.file_id, caption=text or "")
-            else:
-                bot.send_message(uid, f"📢 Broadcast:\n{text}")
-            
-            sent += 1
-            if sent % progress_interval == 0:
-                try:
-                    bot.send_message(ADMIN_ID, f"✅ Sent {sent}/{total} users...")
-                except Exception:
-                    pass
-            time.sleep(0.06)
-        
-        except Exception as e:
-            failed += 1
-            print(f"❌ Broadcast failed for {uid}: {e}")
-    
-    try:
-        bot.send_message(
-            ADMIN_ID,
-            f"🎯 Broadcast completed!\n✅ Sent: {sent}\n❌ Failed: {failed}\n👥 Total: {total}"
-        )
-    except Exception:
-        pass
 
 # -----------------------
 # COUNTRY SELECTION FUNCTIONS
@@ -2220,13 +2243,10 @@ def chat_handler(msg):
                 del admin_deduct_state[user_id]
                 return
     
-    # Original admin commands
-    if user_id == ADMIN_ID:
-        if msg.text and msg.text.strip().lower() == "/sendbroadcast":
-            process_broadcast(msg)
-            return
-    
-    # Handle manual payment proof (already handled above)
+    # Broadcast command
+    if user_id == ADMIN_ID and msg.text and msg.text.strip().lower() == "/broadcast":
+        bot.send_message(msg.chat.id, "📢 **Send Broadcast**\n\nSend or reply to a message to broadcast to all users.")
+        return
     
     bot.send_message(user_id, "⚠️ Please use /start to begin or press buttons from the menu.")
 
