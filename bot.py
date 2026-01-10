@@ -2111,9 +2111,13 @@ def chat_handler(msg):
     
     ensure_user_exists(user_id, msg.from_user.first_name or "Unknown", msg.from_user.username)
     
-    # Skip broadcast command handling here since it's handled separately
-    if msg.text and msg.text.startswith('/'):
-        return
+    # Skip commands ONLY if admin is NOT in deduct flow
+    if (
+       msg.text
+         and msg.text.startswith('/')
+            and not (user_id == ADMIN_ID and user_id in admin_deduct_state)
+):
+    return
     
     # ADMIN DEDUCT PROCESS HANDLER - COMPLETELY FIXED
     if user_id == ADMIN_ID and user_id in admin_deduct_state:
