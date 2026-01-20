@@ -388,7 +388,7 @@ def handle_callbacks(call):
         elif data == "support":
             try:
                 bot.edit_message_text(
-                    "🛠️ Support: @NOBITA_USA_903",
+                    "🛠️ Support: @ksotpsupport",
                     call.message.chat.id,
                     call.message.message_id,
                     reply_markup=InlineKeyboardMarkup().add(
