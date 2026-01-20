@@ -774,11 +774,7 @@ Click the button below to join, then press VERIFY ✅</blockquote>"""
             edit_or_resend(
                 call.message.chat.id,
                 call.message.message_id,
-                 "𝗙𝗲𝗮𝘁𝘂𝗿es
-🔰 𝗦𝘁𝗼𝗰𝗸 𝗨𝗽𝗱𝗮𝘁𝗲𝘀
-🔰 𝗣𝗮𝘆𝗺𝗲𝗻𝘁 & 𝗥𝗲𝗰𝗵𝗮𝗿𝗴𝗲 𝗜𝘀𝘀𝘂𝗲𝘀
-🔰 𝗜𝗗 & 𝗩𝗲𝗿𝗶𝗳𝗶𝗰𝗮𝘁𝗶𝗼𝗻 𝗣𝗿𝗼𝗯𝗹𝗲𝗺𝘀
-🔰 𝗧𝗲𝗰𝗵𝗻𝗶𝗰𝗮𝗹 𝗦𝘂𝗽𝗽𝗼𝗿𝘁: @ksotpsupport",
+                 "🔰 𝗦𝘁𝗼𝗰𝗸 𝗨𝗽𝗱𝗮𝘁𝗲𝘀 & 𝗦𝘂𝗽𝗽𝗼𝗿𝘁: @ksotpsupport",
                 markup=InlineKeyboardMarkup().add(
                     InlineKeyboardButton("⬅️ Back", callback_data="back_to_menu")
                 )
