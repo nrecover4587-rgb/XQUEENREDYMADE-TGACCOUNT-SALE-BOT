@@ -21,11 +21,11 @@ from pyrogram.errors import (
 # -----------------------
 # CONFIG
 # -----------------------
-BOT_TOKEN = os.getenv('BOT_TOKEN', 'pest')
-ADMIN_ID = int(os.getenv('ADMIN_ID', '7582601826'))
-MONGO_URL = os.getenv('MONGO_URL', 'mongodb+srv://teamdaxx123:teamdaxx123@cluster0.ysbpgcp.mongodb.net/?retryWrites=true&w=majority')
-API_ID = int(os.getenv('API_ID', '30038466'))
-API_HASH = os.getenv('API_HASH', '5a492a0dfb22b1a0b7caacbf90cbf96e')
+BOT_TOKEN = os.getenv('BOT_TOKEN', '8429714477:AAEqkmMlG64Dg0AMxwvoHfBK4QVWvpPJJrQ')
+ADMIN_ID = int(os.getenv('ADMIN_ID', '8364016757'))
+MONGO_URL = os.getenv('MONGO_URL', 'mongodb+srv://NoxxNetwork:qQ2GDZxvjBp_XDH@noxxnetwork.b95um.mongodb.net/?appName=NoxxNetwork')
+API_ID = int(os.getenv('API_ID', '28483345'))
+API_HASH = os.getenv('API_HASH', '0b04eb0deb137eb4d75bda5ca0bc49e8')
 
 
 # Referral commission percentage
