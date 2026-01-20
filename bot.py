@@ -402,7 +402,7 @@ def handle_callbacks(call):
                     pass
                 bot.send_message(
                     call.message.chat.id,
-                    "🛠️ Support: @NOBITA_USA_903",
+                    "🛠️ Support: @ksotpsupport",
                     reply_markup=InlineKeyboardMarkup().add(
                         InlineKeyboardButton("⬅️ Back", callback_data="back_to_menu")
                     )
