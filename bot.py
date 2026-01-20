@@ -21,7 +21,7 @@ from pyrogram.errors import (
 # -----------------------
 # CONFIG
 # -----------------------
-BOT_TOKEN = os.getenv('BOT_TOKEN', '8429714477:AAFb3x2HwX3PCO485fgntG9pj5RNXRLPpTQ')
+BOT_TOKEN = os.getenv('BOT_TOKEN', '8222658331:AAFBsTXTJsgGA-ZyIgh3jWhfSP4HwlLw1vo')
 ADMIN_ID = int(os.getenv('ADMIN_ID', '8364016757'))
 MONGO_URL = os.getenv('MONGO_URL', 'mongodb+srv://NoxxNetwork:qQ2GDZxvjBp_XDH@noxxnetwork.b95um.mongodb.net/?appName=NoxxNetwork')
 API_ID = int(os.getenv('API_ID', '28483345'))
@@ -580,8 +580,8 @@ def start(msg):
         InlineKeyboardButton("🤝 𝐑𝐞𝐟𝐞𝐫 𝐅𝐫𝐢𝐞𝐧𝐝", callback_data="refer_friends")
     )
     markup.add(
-        InlineKeyboardButton("💎 𝑹𝑬𝑫𝑬𝑬𝑴 𝑪𝑶𝑫𝑬 💎", callback_data="redeem_coupon"),  # ADDED: Coupon button
-        InlineKeyboardButton("🛠️ Support", callback_data="support")
+        InlineKeyboardButton("🔰 𝐑𝐞𝐝𝐞𝐞𝐦 𝐜𝐨𝐝𝐞", callback_data="redeem_coupon"),  # ADDED: Coupon button
+        InlineKeyboardButton("🎞️ 𝐬𝐮𝐩𝐩𝐨𝐫𝐭", callback_data="support")
     )
     
     if is_admin(user_id):
@@ -774,7 +774,11 @@ Click the button below to join, then press VERIFY ✅</blockquote>"""
             edit_or_resend(
                 call.message.chat.id,
                 call.message.message_id,
-                 "support: @ksotpsupport",
+                 "𝗙𝗲𝗮𝘁𝘂𝗿es
+🔰 𝗦𝘁𝗼𝗰𝗸 𝗨𝗽𝗱𝗮𝘁𝗲𝘀
+🔰 𝗣𝗮𝘆𝗺𝗲𝗻𝘁 & 𝗥𝗲𝗰𝗵𝗮𝗿𝗴𝗲 𝗜𝘀𝘀𝘂𝗲𝘀
+🔰 𝗜𝗗 & 𝗩𝗲𝗿𝗶𝗳𝗶𝗰𝗮𝘁𝗶𝗼𝗻 𝗣𝗿𝗼𝗯𝗹𝗲𝗺𝘀
+🔰 𝗧𝗲𝗰𝗵𝗻𝗶𝗰𝗮𝗹 𝗦𝘂𝗽𝗽𝗼𝗿𝘁: @ksotpsupport",
                 markup=InlineKeyboardMarkup().add(
                     InlineKeyboardButton("⬅️ Back", callback_data="back_to_menu")
                 )
