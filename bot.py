@@ -21,14 +21,14 @@ from pyrogram.errors import (
 # -----------------------
 # CONFIG
 # -----------------------
-BOT_TOKEN = os.getenv('BOT_TOKEN', '8543596764:AAH68BMGTpPDTgaYHinhIq-AFrLzQPtCGBg')
-ADMIN_ID = int(os.getenv('ADMIN_ID', '7582601826'))
-MONGO_URL = os.getenv('MONGO_URL', 'mongodb+srv://teamdaxx123:teamdaxx123@cluster0.ysbpgcp.mongodb.net/?retryWrites=true&w=majority')
-API_ID = int(os.getenv('API_ID', '30038466'))
-API_HASH = os.getenv('API_HASH', '5a492a0dfb22b1a0b7caacbf90cbf96e')
+BOT_TOKEN = os.getenv('BOT_TOKEN', '8222658331:AAEjJJBk4ilcGdUJJTnLhsYvuwrpu6IGG_A')
+ADMIN_ID = int(os.getenv('ADMIN_ID', '8364016757'))
+MONGO_URL = os.getenv('MONGO_URL', 'mongodb+srv://NoxxNetwork:qQ2GDZxvjBp_XDH@noxxnetwork.b95um.mongodb.net/?appName=NoxxNetwork')
+API_ID = int(os.getenv('API_ID', '28483345'))
+API_HASH = os.getenv('API_HASH', '0b04eb0deb137eb4d75bda5ca0bc49e8')
 
 # MUST JOIN CHANNEL
-MUST_JOIN_CHANNEL = "@bot_heart"
+MUST_JOIN_CHANNEL = "@ksotpsupport"
 
 # Referral commission percentage
 REFERRAL_COMMISSION = 1.5  # 1.5% per recharge
@@ -483,11 +483,17 @@ def start(msg):
         # Show join message with buttons
         caption = """<blockquote><b>🚀 Join Our Channel First!</b>
 
-📢 To use this bot, you must join our official channel.
+📢 ✨✨ 𝗪𝗘𝗟𝗖𝗢𝗠𝗘! ✨✨
 
-👉 Get updates, new features & support from our channel.
+𝗧𝗼 𝗖𝗢𝗡𝗧𝗜𝗡𝗨𝗘 𝗨𝗦𝗜𝗡𝗚 𝗧𝗛𝗜𝗦 𝗕𝗢𝗧,
+𝗣𝗟𝗘𝗔𝗦𝗘 𝗝𝗢𝗜𝗡 𝗢𝗨𝗥
+🔥 𝗢𝗙𝗙𝗜𝗖𝗜𝗔𝗟 𝗖𝗛𝗔𝗡𝗡𝗘𝗟 🔥
 
-Click the button below to join, then press VERIFY ✅</blockquote>"""
+🚀 𝗘𝗫𝗖𝗟𝗨𝗦𝗜𝗩𝗘 𝗨𝗣𝗗𝗔𝗧𝗘𝗦
+⚙️ 𝗡𝗘𝗪 𝗙𝗘𝗔𝗧𝗨𝗥𝗘𝗦
+💬 𝗙𝗔𝗦𝗧 𝗦𝗨𝗣𝗣𝗢𝗥𝗧
+
+𝗝𝗢𝗜𝗡 𝗡𝗢𝗪 & 𝗣𝗥𝗘𝗦𝗦〔𝗩𝗘𝗥𝗜𝗙𝗬〕 ✅</blockquote>"""
         
         markup = InlineKeyboardMarkup(row_width=2)
         markup.add(
@@ -498,7 +504,7 @@ Click the button below to join, then press VERIFY ✅</blockquote>"""
         try:
             bot.send_photo(
                 user_id,
-                "https://files.catbox.moe/7s0nqh.jpg",
+                "https://files.catbox.moe/zo7jvy.jpg",
                 caption=caption,
                 parse_mode="HTML",
                 reply_markup=markup
@@ -534,31 +540,47 @@ Click the button below to join, then press VERIFY ✅</blockquote>"""
     caption = """<blockquote>🥂 <b>Welcome To OTP Bot By Xqueen</b> 🥂</blockquote>
 
 <blockquote><b>Features:</b>
-• Automatic OTPs 📍
-• Easy to Use 🥂🥂
-• 24/7 Support 👨‍🔧
-• Instant Payment Approvals 🧾
+𝗪𝗘𝗟𝗖𝗢𝗠𝗘 𝗧𝗢 - 𝗢𝗧𝗣 𝗕𝗢𝗧
 
-<b>How to use:</b>
-1️⃣ Recharge
-2️⃣ Select Country
-3️⃣ Buy Account
-4️⃣ Get Number & Login through Telegram X
-5️⃣ Receive OTP & You're Done ✅
+⚡ 𝗙𝗔𝗦𝗧 • 𝗦𝗠𝗔𝗥𝗧 • 𝗥𝗘𝗟𝗜𝗔𝗕𝗟𝗘 ⚡
+
+━━━━━━━━━━━━━━━
+
+🌟 𝗪𝗛𝗔𝗧 𝗬𝗢𝗨 𝗚𝗘𝗧
+
+✅ 𝗔𝘂𝘁𝗼 𝗢𝗧𝗣 𝗗𝗲𝗹𝗶𝘃𝗲𝗿𝘆
+⚡ 𝗜𝗻𝘀𝘁𝗮𝗻𝘁 𝗔𝗰𝗰𝗲𝘀𝘀
+🧠 𝗘𝗮𝘀𝘆 & 𝗖𝗹𝗲𝗮𝗻 𝗨𝘀𝗲
+🛠 𝟮𝟰×𝟳 𝗔𝗰𝘁𝗶𝘃𝗲 𝗦𝘂𝗽𝗽𝗼𝗿𝘁
+💳 𝗤𝘂𝗶𝗰𝗸 𝗣𝗮𝘆𝗺𝗲𝗻𝘁 𝗔𝗽𝗽𝗿𝗼𝘃𝗮𝗹
+
+━━━━━━━━━━━━━━━
+
+🧭 𝗛𝗢𝗪 𝗜𝗧 𝗪𝗢𝗥𝗞𝗦
+
+➊ 𝗥𝗲𝗰𝗵𝗮𝗿𝗴𝗲 𝗬𝗼𝘂𝗿 𝗕𝗮𝗹𝗮𝗻𝗰𝗲
+➋ 𝗖𝗵𝗼𝗼𝘀𝗲 𝗖𝗼𝘂𝗻𝘁𝗿𝘆
+➌ 𝗦𝗲𝗹𝗲𝗰𝘁 𝗔𝗰𝗰𝗼𝘂𝗻𝘁
+➍ 𝗚𝗲𝘁 𝗡𝘂𝗺𝗯𝗲𝗿 & 𝗟𝗼𝗴𝗶𝗻
+➎ 𝗥𝗲𝗰𝗲𝗶𝘃𝗲 𝗢𝗧𝗣 — 𝗗𝗢𝗡𝗘 ✅
+
+━━━━━━━━━━━━━━━
+
+🚀 𝗘𝗻𝗷𝗼𝘆 𝗔 𝗦𝗺𝗼𝗼𝘁𝗵 & 𝗙𝗮𝘀𝘁 𝗘𝘅𝗽𝗲𝗿𝗶𝗲𝗻𝗰𝗲 🚀
 
 🚀 <b>Enjoy Fast Account Buying Experience!</b></blockquote>"""
     
     markup = InlineKeyboardMarkup(row_width=2)
     markup.add(
-        InlineKeyboardButton("🛒 Buy Account", callback_data="buy_account"),
-        InlineKeyboardButton("💰 Balance", callback_data="balance")
+        InlineKeyboardButton("🛒 𝐁𝐮𝐲 𝐀𝐜𝐜𝐨𝐮𝐧𝐭", callback_data="buy_account"),
+        InlineKeyboardButton("💰 𝐁𝐚𝐥𝐚𝐧𝐜𝐞", callback_data="balance")
     )
     markup.add(
-        InlineKeyboardButton("💳 Recharge", callback_data="recharge"),
-        InlineKeyboardButton("👥 Refer Friends", callback_data="refer_friends")
+        InlineKeyboardButton("🔋 𝐑𝐞𝐜𝐡𝐚𝐫𝐠𝐞", callback_data="recharge"),
+        InlineKeyboardButton("🤝 𝐑𝐞𝐟𝐞𝐫 𝐅𝐫𝐢𝐞𝐧𝐝", callback_data="refer_friends")
     )
     markup.add(
-        InlineKeyboardButton("🎁 Redeem Coupon", callback_data="redeem_coupon"),  # ADDED: Coupon button
+        InlineKeyboardButton("💎 𝑹𝑬𝑫𝑬𝑬𝑴 𝑪𝑶𝑫𝑬 💎", callback_data="redeem_coupon"),  # ADDED: Coupon button
         InlineKeyboardButton("🛠️ Support", callback_data="support")
     )
     
@@ -568,7 +590,7 @@ Click the button below to join, then press VERIFY ✅</blockquote>"""
     try:
         bot.send_photo(
             user_id,
-            "https://files.catbox.moe/7s0nqh.jpg",
+            "https://files.catbox.moe/g4cx7o.jpg",
             caption=caption,
             parse_mode="HTML",
             reply_markup=markup
@@ -752,7 +774,18 @@ Click the button below to join, then press VERIFY ✅</blockquote>"""
             edit_or_resend(
                 call.message.chat.id,
                 call.message.message_id,
-                "🛠️ Support: @NOBITA_USA_903",
+                "🛠️💬 𝗡𝗘𝗘𝗗 𝗛𝗘𝗟𝗣? 𝗝𝗢𝗜𝗡 𝗢𝗨𝗥 𝗦𝗨𝗣𝗣𝗢𝗥𝗧 𝗖𝗛𝗔𝗡𝗡𝗘𝗟!💬
+
+🔰🚨 𝗙𝗔𝗖𝗜𝗡𝗚 𝗜𝗦𝗦𝗨𝗘𝗦? 𝗪𝗘’𝗩𝗘 𝗚𝗢𝗧 𝗬𝗢𝗨 𝗖𝗢𝗩𝗘𝗥𝗘𝗗!
+
+ 𝗙𝗲𝗮𝘁𝘂𝗿𝗲𝘀:
+🔰 𝗦𝘁𝗼𝗰𝗸 𝗨𝗽𝗱𝗮𝘁𝗲𝘀
+🔰 𝗣𝗮𝘆𝗺𝗲𝗻𝘁 & 𝗥𝗲𝗰𝗵𝗮𝗿𝗴𝗲 𝗜𝘀𝘀𝘂𝗲𝘀
+🔰 𝗜𝗗 & 𝗩𝗲𝗿𝗶𝗳𝗶𝗰𝗮𝘁𝗶𝗼𝗻 𝗣𝗿𝗼𝗯𝗹𝗲𝗺𝘀
+🔰 𝗧𝗲𝗰𝗵𝗻𝗶𝗰𝗮𝗹 𝗦𝘂𝗽𝗽𝗼𝗿𝘁
+
+𝗔𝗹𝗲𝗿𝘁𝘀 • 𝗙𝗮𝘀𝘁 𝗔𝘀𝘀𝗶𝘀𝘁𝗮𝗻𝗰𝗲 • 𝗔𝗹𝘄𝗮𝘆𝘀 𝗢𝗻 
+👇 𝗝𝗼𝗶𝗻 𝗡𝗢𝗪 & 𝗚𝗲𝘁 𝗧𝗵𝗲 𝗛𝗲𝗹𝗽 𝗜𝗻𝘀𝘁𝗮𝗻𝘁𝗹𝘆! 🚀 : @ksotpsupport",
                 markup=InlineKeyboardMarkup().add(
                     InlineKeyboardButton("⬅️ Back", callback_data="back_to_menu")
                 )
@@ -2735,7 +2768,7 @@ def process_recharge_amount_manual(msg):
         # Send QR code image
         bot.send_photo(
             msg.chat.id,
-            "https://files.catbox.moe/8rpxez.jpg",
+             "https://files.catbox.moe/0vpaen.jpg",
             caption=caption,
             parse_mode="HTML",
             reply_markup=markup
