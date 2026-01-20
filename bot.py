@@ -774,8 +774,7 @@ Click the button below to join, then press VERIFY ✅</blockquote>"""
             edit_or_resend(
                 call.message.chat.id,
                 call.message.message_id,
-                "
-👇 𝗝𝗼𝗶𝗻 𝗡𝗢𝗪 & 𝗚𝗲𝘁 𝗧𝗵𝗲 𝗛𝗲𝗹𝗽 𝗜𝗻𝘀𝘁𝗮𝗻𝘁𝗹𝘆! 🚀 : @ksotpsupport",
+                 "support: @ksotpsupport",
                 markup=InlineKeyboardMarkup().add(
                     InlineKeyboardButton("⬅️ Back", callback_data="back_to_menu")
                 )
