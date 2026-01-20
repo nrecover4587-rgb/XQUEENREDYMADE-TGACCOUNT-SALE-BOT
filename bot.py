@@ -345,12 +345,12 @@ def start(msg):
     
     markup = InlineKeyboardMarkup(row_width=2)
     markup.add(
-        InlineKeyboardButton("🛒 Buy Account", callback_data="buy_account"),
-        InlineKeyboardButton("💰 Balance", callback_data="balance")
+        InlineKeyboardButton("🛒 𝐁𝐮𝐲 𝐀𝐜𝐜𝐨𝐮𝐧𝐭", callback_data="buy_account"),
+        InlineKeyboardButton("💰 𝐁𝐚𝐥𝐚𝐧𝐜𝐞", callback_data="balance")
     )
     markup.add(
-        InlineKeyboardButton("💳 Recharge", callback_data="recharge"),
-        InlineKeyboardButton("👥 Refer Friends", callback_data="refer_friends")
+        InlineKeyboardButton("🔋 𝐑𝐞𝐜𝐡𝐚𝐫𝐠𝐞", callback_data="recharge"),
+        InlineKeyboardButton("🤝 𝐑𝐞𝐟𝐞𝐫 𝐅𝐫𝐢𝐞𝐧𝐝", callback_data="refer_friends")
     )
     markup.add(
         InlineKeyboardButton("🛠️ Support", callback_data="support")
@@ -362,7 +362,7 @@ def start(msg):
     try:
         bot.send_photo(
             user_id,
-            "https://files.catbox.moe/7s0nqh.jpg",
+            "https://files.catbox.moe/g4cx7o.jpg",
             caption=caption,
             parse_mode="HTML",
             reply_markup=markup
