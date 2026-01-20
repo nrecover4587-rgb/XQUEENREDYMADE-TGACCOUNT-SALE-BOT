@@ -272,11 +272,17 @@ def start(msg):
         # Show join message with buttons
         caption = """<blockquote><b>🚀 Join Our Channel First!</b>
 
-📢 To use this bot, you must join our official channel.
+📢 ✨✨ 𝗪𝗘𝗟𝗖𝗢𝗠𝗘! ✨✨
 
-👉 Get updates, new features & support from our channel.
+𝗧𝗼 𝗖𝗢𝗡𝗧𝗜𝗡𝗨𝗘 𝗨𝗦𝗜𝗡𝗚 𝗧𝗛𝗜𝗦 𝗕𝗢𝗧,
+𝗣𝗟𝗘𝗔𝗦𝗘 𝗝𝗢𝗜𝗡 𝗢𝗨𝗥
+🔥 𝗢𝗙𝗙𝗜𝗖𝗜𝗔𝗟 𝗖𝗛𝗔𝗡𝗡𝗘𝗟 🔥
 
-Click the button below to join, then press VERIFY ✅</blockquote>"""
+🚀 𝗘𝗫𝗖𝗟𝗨𝗦𝗜𝗩𝗘 𝗨𝗣𝗗𝗔𝗧𝗘𝗦
+⚙️ 𝗡𝗘𝗪 𝗙𝗘𝗔𝗧𝗨𝗥𝗘𝗦
+💬 𝗙𝗔𝗦𝗧 𝗦𝗨𝗣𝗣𝗢𝗥𝗧
+
+𝗝𝗢𝗜𝗡 𝗡𝗢𝗪 & 𝗣𝗥𝗘𝗦𝗦〔𝗩𝗘𝗥𝗜𝗙𝗬〕 ✅</blockquote>"""
         
         markup = InlineKeyboardMarkup(row_width=2)
         markup.add(
