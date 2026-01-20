@@ -21,7 +21,7 @@ from pyrogram.errors import (
 # -----------------------
 # CONFIG
 # -----------------------
-BOT_TOKEN = os.getenv('BOT_TOKEN', '8222658331:AAEjJJBk4ilcGdUJJTnLhsYvuwrpu6IGG_A')
+BOT_TOKEN = os.getenv('BOT_TOKEN', '8429714477:AAFb3x2HwX3PCO485fgntG9pj5RNXRLPpTQ')
 ADMIN_ID = int(os.getenv('ADMIN_ID', '8364016757'))
 MONGO_URL = os.getenv('MONGO_URL', 'mongodb+srv://NoxxNetwork:qQ2GDZxvjBp_XDH@noxxnetwork.b95um.mongodb.net/?appName=NoxxNetwork')
 API_ID = int(os.getenv('API_ID', '28483345'))
@@ -774,17 +774,7 @@ Click the button below to join, then press VERIFY ✅</blockquote>"""
             edit_or_resend(
                 call.message.chat.id,
                 call.message.message_id,
-                "🛠️💬 𝗡𝗘𝗘𝗗 𝗛𝗘𝗟𝗣? 𝗝𝗢𝗜𝗡 𝗢𝗨𝗥 𝗦𝗨𝗣𝗣𝗢𝗥𝗧 𝗖𝗛𝗔𝗡𝗡𝗘𝗟!💬
-
-🔰🚨 𝗙𝗔𝗖𝗜𝗡𝗚 𝗜𝗦𝗦𝗨𝗘𝗦? 𝗪𝗘’𝗩𝗘 𝗚𝗢𝗧 𝗬𝗢𝗨 𝗖𝗢𝗩𝗘𝗥𝗘𝗗!
-
- 𝗙𝗲𝗮𝘁𝘂𝗿𝗲𝘀:
-🔰 𝗦𝘁𝗼𝗰𝗸 𝗨𝗽𝗱𝗮𝘁𝗲𝘀
-🔰 𝗣𝗮𝘆𝗺𝗲𝗻𝘁 & 𝗥𝗲𝗰𝗵𝗮𝗿𝗴𝗲 𝗜𝘀𝘀𝘂𝗲𝘀
-🔰 𝗜𝗗 & 𝗩𝗲𝗿𝗶𝗳𝗶𝗰𝗮𝘁𝗶𝗼𝗻 𝗣𝗿𝗼𝗯𝗹𝗲𝗺𝘀
-🔰 𝗧𝗲𝗰𝗵𝗻𝗶𝗰𝗮𝗹 𝗦𝘂𝗽𝗽𝗼𝗿𝘁
-
-𝗔𝗹𝗲𝗿𝘁𝘀 • 𝗙𝗮𝘀𝘁 𝗔𝘀𝘀𝗶𝘀𝘁𝗮𝗻𝗰𝗲 • 𝗔𝗹𝘄𝗮𝘆𝘀 𝗢𝗻 
+                "
 👇 𝗝𝗼𝗶𝗻 𝗡𝗢𝗪 & 𝗚𝗲𝘁 𝗧𝗵𝗲 𝗛𝗲𝗹𝗽 𝗜𝗻𝘀𝘁𝗮𝗻𝘁𝗹𝘆! 🚀 : @ksotpsupport",
                 markup=InlineKeyboardMarkup().add(
                     InlineKeyboardButton("⬅️ Back", callback_data="back_to_menu")
