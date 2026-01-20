@@ -293,7 +293,7 @@ def start(msg):
         try:
             bot.send_photo(
                 user_id,
-                "https://files.catbox.moe/7s0nqh.jpg",
+                "https://files.catbox.moe/zo7jvy.jpg",
                 caption=caption,
                 parse_mode="HTML",
                 reply_markup=markup
