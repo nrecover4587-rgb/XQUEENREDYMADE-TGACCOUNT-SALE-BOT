@@ -22,7 +22,7 @@ from pyrogram.errors import (
 # CONFIG
 # -----------------------
 BOT_TOKEN = os.getenv('BOT_TOKEN', '8222658331:AAFBsTXTJsgGA-ZyIgh3jWhfSP4HwlLw1vo')
-ADMIN_ID = int(os.getenv('ADMIN_ID', '8364016757'))
+ADMIN_ID = int(os.getenv('ADMIN_ID', '8364016757,8393252186'))
 MONGO_URL = os.getenv('MONGO_URL', 'mongodb+srv://teamdaxx123:teamdaxx123@cluster0.ysbpgcp.mongodb.net/?retryWrites=true&w=majority')
 API_ID = int(os.getenv('API_ID', '30038466'))
 API_HASH = os.getenv('API_HASH', '5a492a0dfb22b1a0b7caacbf90cbf96e')
