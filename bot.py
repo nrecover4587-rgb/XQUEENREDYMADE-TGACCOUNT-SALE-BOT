@@ -531,7 +531,7 @@ Click the button below to join, then press VERIFY ✅</blockquote>"""
     ensure_user_exists(user_id, msg.from_user.first_name, msg.from_user.username, referred_by)
     
     # Send single photo message with buttons and quoted caption
-    caption = """<blockquote>🥂 <b>Welcome To OTP Bot By Xqueen</b> 🥂</blockquote>
+    caption = """<blockquote>🥂 <b>Welcome To OTP Bot</b> 🥂</blockquote>
 
 <blockquote><b>Features:</b>
 • Automatic OTPs 📍
