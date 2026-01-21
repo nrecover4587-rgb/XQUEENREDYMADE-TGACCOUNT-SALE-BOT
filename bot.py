@@ -3157,7 +3157,7 @@ def chat_handler(msg):
 # -----------------------
 if __name__ == "__main__":
     logger.info(f"🤖 Fixed OTP Bot Starting...")
-    logger.info(f"Admin ID: {ADMIN_ID}")
+   logger.info(f"Admin IDs loaded: {ADMIN_IDS}")
     logger.info(f"Bot Token: {BOT_TOKEN[:10]}...")
     logger.info(f"Global API ID: {GLOBAL_API_ID}")
     logger.info(f"Global API Hash: {GLOBAL_API_HASH[:10]}...")
