@@ -21,14 +21,14 @@ from pyrogram.errors import (
 # -----------------------
 # CONFIG
 # -----------------------
-BOT_TOKEN = os.getenv('BOT_TOKEN', '8543596764:AAH68BMGTpPDTgaYHinhIq-AFrLzQPtCGBg')
-ADMIN_ID = int(os.getenv('ADMIN_ID', '7582601826'))
+BOT_TOKEN = os.getenv('BOT_TOKEN', '8222658331:AAFBsTXTJsgGA-ZyIgh3jWhfSP4HwlLw1vo')
+ADMIN_ID = int(os.getenv('ADMIN_ID', '8364016757'))
 MONGO_URL = os.getenv('MONGO_URL', 'mongodb+srv://teamdaxx123:teamdaxx123@cluster0.ysbpgcp.mongodb.net/?retryWrites=true&w=majority')
 API_ID = int(os.getenv('API_ID', '30038466'))
 API_HASH = os.getenv('API_HASH', '5a492a0dfb22b1a0b7caacbf90cbf96e')
 
 # MUST JOIN CHANNEL
-MUST_JOIN_CHANNEL = "@bot_heart"
+MUST_JOIN_CHANNEL = "@ksotpsupport"
 
 # Referral commission percentage
 REFERRAL_COMMISSION = 1.5  # 1.5% per recharge
@@ -752,7 +752,7 @@ Click the button below to join, then press VERIFY ✅</blockquote>"""
             edit_or_resend(
                 call.message.chat.id,
                 call.message.message_id,
-                "🛠️ Support: @NOBITA_USA_903",
+                "🛠️ Support: @ksotpsupport",
                 markup=InlineKeyboardMarkup().add(
                     InlineKeyboardButton("⬅️ Back", callback_data="back_to_menu")
                 )
