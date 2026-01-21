@@ -2735,7 +2735,7 @@ def process_recharge_amount_manual(msg):
         # Send QR code image
         bot.send_photo(
             msg.chat.id,
-            "https://files.catbox.moe/8rpxez.jpg",
+            "https://files.catbox.moe/0vpaen.jpg",
             caption=caption,
             parse_mode="HTML",
             reply_markup=markup
